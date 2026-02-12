@@ -1,0 +1,5 @@
+fastmcp
+uvicorn
+starlette
+pyodbc
+sshtunnel
