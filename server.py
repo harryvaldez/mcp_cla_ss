@@ -8,6 +8,10 @@ import sys
 import time
 import uuid
 import threading
+from dotenv import load_dotenv
+
+# Load .env file at startup
+load_dotenv()
 import atexit
 import signal
 import decimal
