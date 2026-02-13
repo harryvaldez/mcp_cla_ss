@@ -700,7 +700,7 @@ async def root(_request: Request) -> HTMLResponse:
         <!DOCTYPE html>
         <html>
         <head>
-            <title>PostgreSQL MCP Server</title>
+            <title>SQL Server 2019 MCP Server</title>
             <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
             <style>
                 .bg-gradient {{ background: linear-gradient(135deg, #111827 0%, #1f2937 100%); }}
@@ -709,7 +709,7 @@ async def root(_request: Request) -> HTMLResponse:
         <body class="bg-gray-50 min-h-screen font-sans">
             <nav class="bg-gradient text-white p-6 shadow-lg">
                 <div class="max-w-5xl mx-auto flex justify-between items-center">
-                    <h1 class="text-2xl font-bold tracking-tight">PostgreSQL MCP Server</h1>
+                    <h1 class="text-2xl font-bold tracking-tight">SQL Server 2019 MCP Server</h1>
                     <span class="bg-green-500 text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-widest">Online</span>
                 </div>
             </nav>
@@ -719,7 +719,7 @@ async def root(_request: Request) -> HTMLResponse:
                     <div class="md:col-span-2">
                         <h2 class="text-3xl font-extrabold text-gray-900 mb-4">Server Status & Info</h2>
                         <p class="text-lg text-gray-600 mb-6">
-                            This server provides a high-performance <strong>Model Context Protocol (MCP)</strong> interface to your PostgreSQL database.
+                            This server provides a high-performance <strong>Model Context Protocol (MCP)</strong> interface to your SQL Server 2019 database.
                         </p>
                         
                         <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mb-8">
@@ -1838,12 +1838,10 @@ def db_sql2019_analyze_sessions(
         # Summary
         cur.execute("""
             SELECT 
-                COUNT(*) as total_sessions,
-                SUM(CASE WHEN status = 'running' OR status = 'runnable' THEN 1 ELSE 0 END) as active_count,
-                SUM(CASE WHEN status = 'sleeping' THEN 1 ELSE 0 END) as idle_count,
-                SUM(CASE WHEN blocking_session_id <> 0 THEN 1 ELSE 0 END) as blocked_count
-            FROM sys.dm_exec_sessions
-            WHERE is_user_process = 1
+                (SELECT COUNT(*) FROM sys.dm_exec_sessions WHERE is_user_process = 1) as total_sessions,
+                (SELECT COUNT(*) FROM sys.dm_exec_requests r JOIN sys.dm_exec_sessions s ON r.session_id = s.session_id WHERE s.is_user_process = 1) as active_count,
+                (SELECT COUNT(*) FROM sys.dm_exec_sessions WHERE is_user_process = 1 AND status = 'sleeping') as idle_count,
+                (SELECT COUNT(*) FROM sys.dm_exec_requests WHERE blocking_session_id <> 0) as blocked_count
         """)
         row = cur.fetchone()
         results["summary"] = {
@@ -2672,7 +2670,8 @@ def db_sql2019_analyze_logical_data_model(
             return "SET DEFAULT"
         return desc
 
-    with get_connection() as conn:
+    conn = get_connection()
+    try:
         with conn.cursor() as cur:
             _execute_safe(cur, "select GETUTCDATE() as generated_at_utc")
             generated_at_row = cur.fetchone() or []
@@ -3118,6 +3117,8 @@ def db_sql2019_analyze_logical_data_model(
                 "report_url": url,
                 "summary": summary
             }
+    finally:
+        conn.close()
 
 
 
@@ -3939,7 +3940,8 @@ async def sessions_monitor(_request: Request) -> HTMLResponse:
 
 @mcp.custom_route("/api/sessions", methods=["GET"])
 async def api_sessions(_request: Request) -> JSONResponse:
-    with get_connection() as conn:
+    conn = get_connection()
+    try:
         cur = conn.cursor()
         # Query for session counts in SQL Server
         # Active: status IN ('running', 'runnable')
@@ -3973,6 +3975,8 @@ async def api_sessions(_request: Request) -> JSONResponse:
             "total": int(total),
             "timestamp": time.time()
         })
+    finally:
+        conn.close()
 
 async def health_check(_request: Request) -> JSONResponse:
     return JSONResponse({"status": "healthy"})
