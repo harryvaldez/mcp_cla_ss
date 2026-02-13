@@ -15,7 +15,7 @@ This server exposes a suite of DBA-grade tools to inspect schemas, analyze perfo
 - **Secure Authentication**: Built-in support for **Azure AD (Microsoft Entra ID)** and standard token auth.
 - **HTTPS Support**: Native SSL/TLS support for secure remote connections.
 - **SSH Tunneling**: Built-in support for connecting via SSH bastion hosts.
-- **Python 3.13**: Built on the latest Python runtime for improved performance and security.
+- **Python 3.11**: Built on a stable Python runtime for improved compatibility.
 - **Broad Compatibility**: Fully tested with **SQL Server 2019** and **SQL Server 2022**.
 
 ---
@@ -39,7 +39,7 @@ Spin up a complete environment with **SQL Server**, **MCP Server**, and **n8n** 
     *   Add an **AI Agent** node.
     *   Add an **MCP Tool** to the agent.
     *   Set **Source** to `Remote (SSE)`.
-    *   Set **URL** to `http://mcp-sqlserver:8000/sse` (Note: use container name).
+    *   Set **URL** to `http://mcp-sqlserver:8085/sse` (Note: use container name and port 8085).
     *   **Execute!** You can now ask the AI agent to "count rows in tables" or "check database stats".
 
 ---
@@ -72,12 +72,8 @@ This method ensures you have all dependencies pre-installed. Note the `-i` flag 
         "run",
         "-i",
         "--rm",
-        "-e", "SQL_SERVER=host.docker.internal",
-        "-e", "SQL_USER=sa",
-        "-e", "SQL_PASSWORD=YourPassword123",
-        "-e", "SQL_DATABASE=master",
-        "-e", "MCP_TRANSPORT=stdio",
-        "harryvaldez/mcp-sql-server:latest"
+        "--env-file", ".env",
+        "harryvaldez/mcp_sqlserver:latest"
       ]
     }
   }
@@ -94,10 +90,11 @@ If you prefer running the Python code directly and have `uv` installed:
       "command": "uv",
       "args": ["run", "mcp-sql-server"],
       "env": {
-        "SQL_SERVER": "localhost",
-        "SQL_USER": "sa",
-        "SQL_PASSWORD": "YourPassword123",
-        "SQL_DATABASE": "master"
+        "DB_SERVER": "localhost",
+        "DB_USER": "sa",
+        "DB_PASSWORD": "YourPassword123",
+        "DB_NAME": "master",
+        "DB_DRIVER": "ODBC Driver 17 for SQL Server"
       }
     }
   }

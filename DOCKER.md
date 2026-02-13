@@ -11,7 +11,7 @@ SQL Server Model Context Protocol (MCP) server for AI integration.
 # Create a .env file with your variables
 docker run -d \
   --name mcp-sqlserver \
-  -p 8000:8000 \
+  -p 8085:8085 \
   --env-file .env \
   harryvaldez/mcp_sqlserver:latest
 
@@ -25,7 +25,7 @@ docker run -d \
 - `DB_NAME`: Database name
 - `DB_USER`: Database user
 - `DB_PASSWORD`: Database password
-- `DB_DRIVER`: ODBC driver (default: `{ODBC Driver 18 for SQL Server}`)
+- `DB_DRIVER`: ODBC driver (default: `ODBC Driver 18 for SQL Server`)
 - `DB_PORT`: SQL Server port (default: 1433)
 - `SSH_HOST`: SSH tunnel host (optional)
 - `SSH_PORT`: SSH tunnel port (default: 22)

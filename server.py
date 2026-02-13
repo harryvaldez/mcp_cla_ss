@@ -432,6 +432,9 @@ def _build_connection_string_from_env() -> str | None:
     if not server or not user or not database:
         return None
         
+    # Handle driver name with or without braces
+    driver = driver.strip('{}')
+    
     return f"DRIVER={{{driver}}};SERVER={server},{port};DATABASE={database};UID={user};PWD={password};Encrypt={encrypt};TrustServerCertificate={trust_cert}"
 
 
@@ -4003,16 +4006,19 @@ def main() -> None:
     ssl_key = os.environ.get("MCP_SSL_KEY")
     
     if transport in {"http", "sse"}:
+        # Configure middleware on the app instance before running
+        app = mcp.http_app()
+        # Clear existing middleware to prevent duplication if main() is called multiple times (unlikely but safe)
+        app.user_middleware.clear() 
+        app.add_middleware(APIKeyMiddleware)
+        app.add_middleware(BrowserFriendlyMiddleware)
+
         run_kwargs = {
             "transport": transport,
             "host": host,
             "port": port,
             "stateless_http": stateless,
             "json_response": json_resp,
-            "middleware": [
-                Middleware(APIKeyMiddleware),
-                Middleware(BrowserFriendlyMiddleware)
-            ]
         }
         
         if ssl_cert and ssl_key:
@@ -4020,6 +4026,7 @@ def main() -> None:
             run_kwargs["ssl_keyfile"] = ssl_key
             logger.info(f"Starting MCP server with HTTPS enabled using cert: {ssl_cert}")
         
+        logger.info(f"Starting MCP server on {host}:{port} ({transport})")
         mcp.run(**run_kwargs)
     elif transport == "stdio":
         # Hybrid mode: Start HTTP server in background for UI/Custom Routes

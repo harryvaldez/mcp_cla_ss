@@ -43,10 +43,11 @@ Best for rapid development and testing.
 uv sync
 
 # 2. Set environment variables
-$env:SQL_SERVER="localhost"
-$env:SQL_USER="sa"
-$env:SQL_PASSWORD="YourPassword123"
-$env:SQL_DATABASE="master"
+$env:DB_SERVER="localhost"
+$env:DB_USER="sa"
+$env:DB_PASSWORD="YourPassword123"
+$env:DB_NAME="master"
+$env:DB_DRIVER="ODBC Driver 17 for SQL Server"
 
 # 3. Run server
 uv run mcp-sql-server
@@ -70,16 +71,16 @@ To deploy to the cloud, you first need to build and push the image.
 
 ```bash
 # Build
-docker build -t harryvaldez/mcp-sql-server:latest .
+docker build -t harryvaldez/mcp_sqlserver:latest .
 
 # Push
-docker push harryvaldez/mcp-sql-server:latest
+docker push harryvaldez/mcp_sqlserver:latest
 ```
 
 Notes:
-- The base image is python:3.13-slim (Debian based).
-- Includes Microsoft ODBC Driver 17 for SQL Server.
-- Default HTTP port is 8000; ensure it is available locally when testing.
+- The base image is python:3.11-slim (Debian based).
+- Includes Microsoft ODBC Driver 18 for SQL Server.
+- Default HTTP port is 8085; ensure it is available locally when testing.
 
 ---
 

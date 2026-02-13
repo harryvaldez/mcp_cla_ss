@@ -9,12 +9,17 @@ from unittest.mock import MagicMock, patch
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Configuration for tests - MUST BE SET BEFORE IMPORTING SERVER
-os.environ["SQL_SERVER"] = "127.0.0.1"
-os.environ["SQL_PORT"] = "1433"
-os.environ["SQL_USER"] = "sa"
-os.environ["SQL_PASSWORD"] = "McpTestPassword123!"
-os.environ["SQL_DATABASE"] = "testdb"
-os.environ["SQL_DRIVER"] = "ODBC Driver 17 for SQL Server"
+os.environ["DB_SERVER"] = os.environ.get("DB_SERVER", "127.0.0.1")
+os.environ["DB_PORT"] = os.environ.get("DB_PORT", "1433")
+os.environ["DB_USER"] = os.environ.get("DB_USER", "sa")
+os.environ["DB_PASSWORD"] = os.environ.get("DB_PASSWORD", "McpTestPassword123!")
+os.environ["DB_NAME"] = os.environ.get("DB_NAME", "testdb")
+# Default to Driver 18, but allow override. 
+# In CI/Docker this will be 18. On local Windows it might be 17.
+os.environ["DB_DRIVER"] = os.environ.get("DB_DRIVER", "ODBC Driver 18 for SQL Server")
+os.environ["DB_ENCRYPT"] = "no" # Disable encryption for local tests
+os.environ["DB_TRUST_CERT"] = "yes" # Trust cert for local tests
+
 os.environ["MCP_ALLOW_WRITE"] = "true"
 os.environ["MCP_CONFIRM_WRITE"] = "true" # Required for write mode
 os.environ["FASTMCP_AUTH_TYPE"] = "none" # Disable auth check for tests if needed, or rely on transport default
@@ -29,8 +34,19 @@ from server import (
     db_sql2019_analyze_indexes,
     db_sql2019_create_object,
     db_sql2019_drop_object,
-    mcp
+    mcp,
+    get_connection # Import to check connectivity
 )
+
+def is_db_available():
+    try:
+        conn = get_connection()
+        conn.close()
+        return True
+    except Exception:
+        return False
+
+db_required = pytest.mark.skipif(not is_db_available(), reason="Database not available")
 
 @pytest.fixture(scope="module")
 def event_loop():
@@ -38,6 +54,7 @@ def event_loop():
     yield loop
     loop.close()
 
+@db_required
 class TestUnit:
     """Unit tests for tool functions"""
 
@@ -76,6 +93,7 @@ class TestUnit:
         assert result["summary"]["entities"] >= 3 # products, customers, orders
         assert "report_url" in result
 
+@db_required
 class TestIntegration:
     """Integration scenarios"""
 
@@ -105,6 +123,7 @@ class TestIntegration:
         )
         assert f"View '{view_name}' dropped" in result or "dropped successfully" in result
 
+@db_required
 class TestStress:
     """Stress testing performance"""
     
@@ -118,6 +137,7 @@ class TestStress:
         print(f"50 queries took {duration:.2f}s")
         assert duration < 10 # Should be very fast locally
 
+@db_required
 class TestBlackbox:
     """Blackbox testing via MCP protocol simulation"""
     # This would typically involve running the MCP server process and communicating via stdio
