@@ -425,12 +425,14 @@ def _build_connection_string_from_env() -> str | None:
     user = os.environ.get("DB_USER") or os.environ.get("SQL_USER")
     password = os.environ.get("DB_PASSWORD") or os.environ.get("SQL_PASSWORD")
     database = os.environ.get("DB_NAME") or os.environ.get("SQL_DATABASE")
-    driver = os.environ.get("DB_DRIVER") or os.environ.get("SQL_DRIVER", "ODBC Driver 17 for SQL Server")
+    driver = os.environ.get("DB_DRIVER") or os.environ.get("SQL_DRIVER", "ODBC Driver 18 for SQL Server")
+    encrypt = os.environ.get("DB_ENCRYPT", "no")
+    trust_cert = os.environ.get("DB_TRUST_CERT", "yes")
     
     if not server or not user or not database:
         return None
         
-    return f"DRIVER={{{driver}}};SERVER={server},{port};DATABASE={database};UID={user};PWD={password}"
+    return f"DRIVER={{{driver}}};SERVER={server},{port};DATABASE={database};UID={user};PWD={password};Encrypt={encrypt};TrustServerCertificate={trust_cert}"
 
 
 CONNECTION_STRING = os.environ.get("SQL_CONNECTION_STRING") or _build_connection_string_from_env()
