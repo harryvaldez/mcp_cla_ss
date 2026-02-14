@@ -10,23 +10,29 @@ from unittest.mock import MagicMock, patch
 # Add parent directory to path to import server
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Configuration for tests
-os.environ["DB_SERVER"] = "127.0.0.1"
-os.environ["DB_PORT"] = "1433"
-os.environ["DB_USER"] = "sa"
-os.environ["DB_PASSWORD"] = "McpTestPassword123!"
-os.environ["DB_NAME"] = "testdb"
-os.environ["DB_DRIVER"] = "ODBC Driver 17 for SQL Server"
-os.environ["DB_ENCRYPT"] = "no"
-os.environ["DB_TRUST_CERT"] = "yes"
-os.environ["MCP_ALLOW_WRITE"] = "true"
-os.environ["MCP_CONFIRM_WRITE"] = "true"
-os.environ["FASTMCP_AUTH_TYPE"] = "none"
-os.environ["MCP_TRANSPORT"] = "stdio"
-os.environ["MCP_SKIP_CONFIRMATION"] = "true"
-
+# Configuration for tests is handled via fixture
 import server
 from server import mcp, get_connection
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_env():
+    """Set up environment variables for testing"""
+    with patch.dict(os.environ, {
+        "DB_SERVER": "127.0.0.1",
+        "DB_PORT": "1433",
+        "DB_USER": "sa",
+        "DB_PASSWORD": "McpTestPassword123!", # Should come from secure source in real CI
+        "DB_NAME": "testdb",
+        "DB_DRIVER": "ODBC Driver 17 for SQL Server",
+        "DB_ENCRYPT": "no",
+        "DB_TRUST_CERT": "yes",
+        "MCP_ALLOW_WRITE": "true",
+        "MCP_CONFIRM_WRITE": "true",
+        "FASTMCP_AUTH_TYPE": "none",
+        "MCP_TRANSPORT": "stdio",
+        "MCP_SKIP_CONFIRMATION": "true"
+    }):
+        yield
 
 def is_db_available():
     try:
@@ -119,23 +125,29 @@ class TestIntegration:
         table_name = "temp_test_table"
         cols = [{"name": "id", "type": "int", "constraints": "PRIMARY KEY"}]
         
-        res_create = server.db_sql2019_create_object.fn(
-            object_type="table",
-            object_name=table_name,
-            schema="dbo",
-            parameters={"columns": cols}
-        )
-        assert "created" in res_create.lower()
+        try:
+            res_create = server.db_sql2019_create_object.fn(
+                object_type="table",
+                object_name=table_name,
+                schema="dbo",
+                parameters={"columns": cols}
+            )
+            assert "created" in res_create.lower()
 
-        objs = server.db_sql2019_list_objects.fn(object_type="table", name_pattern=table_name)
-        assert any(o["name"] == table_name for o in objs)
+            objs = server.db_sql2019_list_objects.fn(object_type="table", name_pattern=table_name)
+            assert any(o["name"] == table_name for o in objs)
 
-        res_drop = server.db_sql2019_drop_object.fn(
-            object_type="table",
-            object_name=table_name,
-            schema="dbo"
-        )
-        assert "dropped" in res_drop.lower()
+        finally:
+            # Check if exists before dropping to avoid error noise if create failed
+            objs = server.db_sql2019_list_objects.fn(object_type="table", name_pattern=table_name)
+            if any(o["name"] == table_name for o in objs):
+                res_drop = server.db_sql2019_drop_object.fn(
+                    object_type="table",
+                    object_name=table_name,
+                    schema="dbo"
+                )
+                # Only assert if we actually tried to drop
+                assert "dropped" in res_drop.lower()
 
 @db_required
 class TestStress:

@@ -430,8 +430,8 @@ def _build_connection_string_from_env() -> str | None:
     password = os.environ.get("DB_PASSWORD") or os.environ.get("SQL_PASSWORD")
     database = os.environ.get("DB_NAME") or os.environ.get("SQL_DATABASE")
     driver = os.environ.get("DB_DRIVER") or os.environ.get("SQL_DRIVER", "ODBC Driver 18 for SQL Server")
-    encrypt = os.environ.get("DB_ENCRYPT", "no")
-    trust_cert = os.environ.get("DB_TRUST_CERT", "yes")
+    encrypt = os.environ.get("DB_ENCRYPT", "yes")
+    trust_cert = os.environ.get("DB_TRUST_CERT", "no")
     
     if not server or not user or not database:
         return None
@@ -3390,16 +3390,15 @@ def db_sql2019_server_info_mcp() -> dict[str, Any]:
     Returns:
         Dictionary containing server name, version, status, transport type, and connected database name.
     """
-    conn = get_connection()
     try:
+        conn = get_connection()
         cur = conn.cursor()
         cur.execute("SELECT DB_NAME() as database_name")
         row = cur.fetchone()
         database_name = row[0] if row else "unknown"
+        conn.close()
     except Exception:
         database_name = "error"
-    finally:
-        conn.close()
 
     return {
         "name": mcp.name,

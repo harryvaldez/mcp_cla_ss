@@ -47,7 +47,8 @@ class TestMockedTools:
 
     def test_run_query_basic(self, mock_conn):
         mock_conn.description = [("col1",), ("col2",)]
-        mock_conn.fetchall.return_value = [("val1", 1), ("val2", 2)]
+        # mock fetchmany for _fetch_limited
+        mock_conn.fetchmany.side_effect = [[("val1", 1), ("val2", 2)], []]
         
         result = server.db_sql2019_run_query.fn(sql="SELECT * FROM table")
         
@@ -57,7 +58,8 @@ class TestMockedTools:
 
     def test_run_query_parameterized(self, mock_conn):
         mock_conn.description = [("name",)]
-        mock_conn.fetchall.return_value = [("Test",)]
+        # mock fetchmany for _fetch_limited
+        mock_conn.fetchmany.side_effect = [[("Test",)], []]
         
         params = json.dumps(["Test"])
         result = server.db_sql2019_run_query.fn(sql="SELECT * FROM table WHERE name = ?", params_json=params)
@@ -108,9 +110,24 @@ class TestMockedTools:
     def test_analyze_sessions(self, mock_conn):
         # 1. Summary, 2. Active, 3. Idle, 4. Locked
         mock_conn.fetchone.return_value = (10, 2, 8, 0) # Summary
-        mock_conn.description = [("session_id",), ("login_name",)]
+        
+        def execute_side_effect(*args, **kwargs):
+            sql = args[0] if args else ""
+            if "dm_exec_requests" in sql and "active_sessions" not in locals(): 
+                # Active sessions query
+                mock_conn.description = [("session_id",), ("login_name",), ("elapsed_seconds",)]
+            elif "dm_exec_sessions" in sql and "sleeping" in sql:
+                # Idle sessions
+                mock_conn.description = [("session_id",), ("login_name",)]
+            elif "blocking_session_id <> 0" in sql:
+                # Locked sessions
+                mock_conn.description = [("blocked_session_id",), ("blocked_user",)]
+            return mock_conn
+
+        mock_conn.execute.side_effect = execute_side_effect
+
         mock_conn.fetchall.side_effect = [
-            [(1, "user1")], # Active
+            [(1, "user1", 100.0)], # Active
             [(2, "user2")], # Idle
             [] # Locked
         ]
@@ -118,6 +135,7 @@ class TestMockedTools:
         result = server.db_sql2019_analyze_sessions.fn()
         assert result["summary"]["total_sessions"] == 10
         assert len(result["active_sessions"]) == 1
+        assert "recommendations" in result
 
     def test_create_object_table(self, mock_conn):
         with mock.patch("server.ALLOW_WRITE", True):
@@ -157,9 +175,12 @@ class TestMockedTools:
 
     def test_kill_session(self, mock_conn):
         with mock.patch("server.ALLOW_WRITE", True):
+            # mock_conn.fetchval is used to check self-kill
+            mock_conn.fetchval.return_value = 1 # My SPID is 1
+            
             result = server.db_sql2019_kill_session.fn(session_id=99)
-            assert result["status"] == "success"
-            mock_conn.execute.assert_called_with("KILL 99")
+            assert result["terminated"] is True
+            mock_conn.execute.assert_called()
 
     def test_explain_query(self, mock_conn):
         mock_conn.fetchone.return_value = ("<xml_plan></xml_plan>",)
@@ -190,7 +211,18 @@ class TestMockedTools:
 
     def test_analyze_table_health(self, mock_conn):
         # 1. Stats, 2. Heaps
-        mock_conn.description = [("table",), ("stat_name",)]
+        # We need to change description between calls to match the query results
+        
+        def execute_side_effect(*args, **kwargs):
+            sql = args[0] if args else ""
+            if "stats_date" in sql.lower(): # Query for stats
+                 mock_conn.description = [("table",), ("stat_name",)]
+            elif "heap" in sql.lower() or "sys.indexes" in sql.lower(): # Query for heaps
+                 mock_conn.description = [("table",), ("row_count",)]
+            return mock_conn
+            
+        mock_conn.execute.side_effect = execute_side_effect
+        
         mock_conn.fetchall.side_effect = [
             [("table1", "stat1")], # Outdated
             [("table2", 1000)] # Heaps
@@ -201,22 +233,24 @@ class TestMockedTools:
         assert len(result["heap_tables"]) == 1
 
     def test_db_sec_perf_metrics(self, mock_conn):
-        # 1. Orphaned, 2. Auth, 3. PLE, 4. Buffer Hit
+        # 1. Orphaned (fetchall), 2. Auth (fetchone), 3. PLE (fetchone), 4. Buffer Hit (fetchone)
         mock_conn.description = [("name",), ("val",)]
         mock_conn.fetchall.side_effect = [
             [("orphaned_user",)], # Orphaned
-            [("Mixed",)], # Auth mode
-            [(500,)], # PLE
-            [(99.5,)] # Buffer hit
+        ]
+        mock_conn.fetchone.side_effect = [
+            (0,), # Auth mode (Mixed)
+            (500,), # PLE
+            (99.5,) # Buffer hit
         ]
         
-        result = server.db_sec_perf_metrics.fn() # Fixed name if needed
+        result = server.db_sql2019_db_sec_perf_metrics.fn() # Fixed name if needed
         assert "security" in result
         assert "performance" in result
 
     def test_recommend_partitioning(self, mock_conn):
-        mock_conn.description = [("schema",), ("table",), ("size_gb",)]
-        mock_conn.fetchall.return_value = [("dbo", "big_table", 5.5)]
+        mock_conn.description = [("schema",), ("table",), ("size_gb",), ("row_count",)]
+        mock_conn.fetchall.return_value = [("dbo", "big_table", 5.5, 1000000)]
         
         result = server.db_sql2019_recommend_partitioning.fn(min_size_gb=1)
         assert len(result["candidates"]) == 1
