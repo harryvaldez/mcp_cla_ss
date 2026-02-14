@@ -604,22 +604,12 @@ _WRITE_KEYWORDS = {
     "truncate",
     "grant",
     "revoke",
-    "comment",
     "bulk",
     "backup",
     "restore",
     "dbcc",
-    "call",
-    "do",
-    "execute",
     "exec",
-    "reset",
-    "lock",
-    "commit",
-    "rollback",
-    "begin",
-    "savepoint",
-    "release",
+    "execute",
 }
 
 _READONLY_START = {"select", "with", "show", "explain", "set"}
@@ -2114,13 +2104,14 @@ def db_sql2019_list_objects(
         # --- Database ---
         if object_type == 'database':
             query = """
-                SELECT 
+                SELECT TOP (?)
                     d.name,
                     suser_sname(d.owner_sid) as owner,
                     d.state_desc as state,
                     d.recovery_model_desc as recovery_model
                 FROM sys.databases d
             """
+            params.append(limit)
             if owner:
                 filters.append("suser_sname(d.owner_sid) = ?")
                 params.append(owner)
@@ -2323,19 +2314,7 @@ def db_sql2019_list_objects(
              return [{"error": f"Unsupported object_type: {object_type}"}]
 
         # Construct final query
-        if object_type == 'database':
-             # Special case for database: inject TOP (?) and handle params
-             query = query.replace("SELECT", "SELECT TOP (?)", 1)
-             params.insert(0, limit)
-             
-             where_clause = ""
-             if filters:
-                prefix = " AND " if "WHERE" in query else " WHERE "
-                where_clause = prefix + " AND ".join(filters)
-             
-             full_sql = f"{query} {where_clause} {sort_clause}"
-
-        elif object_type != 'table':
+        if object_type != 'table':
             where_clause = ""
             if filters:
                 # If query already has WHERE (like function), append with AND
@@ -3350,8 +3329,8 @@ def db_sql2019_explain_query(
                 # Ensure we turn it off even if error
                 try:
                     cur.execute("SET STATISTICS XML OFF")
-                except:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Failed to disable STATISTICS XML: {e}")
         else:
             # SET SHOWPLAN_XML ON compiles but does not execute
             cur.execute("SET SHOWPLAN_XML ON")

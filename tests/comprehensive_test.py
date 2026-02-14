@@ -12,7 +12,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Configuration for tests is handled via fixture
 import server
-from server import mcp, get_connection
 
 @pytest.fixture(scope="module", autouse=True)
 def setup_env():
@@ -149,8 +148,7 @@ class TestIntegration:
                     object_name=table_name,
                     schema="dbo"
                 )
-                # Assertion removed from finally block to prevent masking errors
-                # assert "dropped" in res_drop.lower()
+
 
 @pytest.mark.usefixtures("db_required")
 class TestStress:
@@ -178,7 +176,7 @@ class TestBlackbox:
     @pytest.mark.asyncio
     async def test_list_tools(self):
         # Use FastMCP's internal get_tools
-        tools = await mcp.get_tools()
+        tools = await server.mcp.get_tools()
         assert len(tools) >= 20
         # If it returns strings, tools is the list of names
         assert "db_sql2019_run_query" in tools
