@@ -605,15 +605,14 @@ _WRITE_KEYWORDS = {
     "grant",
     "revoke",
     "comment",
-    "vacuum",
-    "analyze",
-    "reindex",
-    "cluster",
-    "refresh",
-    "copy",
+    "bulk",
+    "backup",
+    "restore",
+    "dbcc",
     "call",
     "do",
     "execute",
+    "exec",
     "reset",
     "lock",
     "commit",
@@ -1964,7 +1963,6 @@ def db_sql2019_kill_session(session_id: int) -> dict[str, Any]:
             raise ValueError("Cannot kill the current session.")
         
         cur.execute(f"KILL {session_id}")
-        conn.commit()
         
         return {
             "session_id": session_id,
@@ -2325,8 +2323,19 @@ def db_sql2019_list_objects(
              return [{"error": f"Unsupported object_type: {object_type}"}]
 
         # Construct final query
-        # Note: Table query constructed itself differently, need to handle that.
-        if object_type != 'table':
+        if object_type == 'database':
+             # Special case for database: inject TOP (?) and handle params
+             query = query.replace("SELECT", "SELECT TOP (?)", 1)
+             params.insert(0, limit)
+             
+             where_clause = ""
+             if filters:
+                prefix = " AND " if "WHERE" in query else " WHERE "
+                where_clause = prefix + " AND ".join(filters)
+             
+             full_sql = f"{query} {where_clause} {sort_clause}"
+
+        elif object_type != 'table':
             where_clause = ""
             if filters:
                 # If query already has WHERE (like function), append with AND
@@ -2337,16 +2346,6 @@ def db_sql2019_list_objects(
         else:
              # Table query was fully built above
              full_sql = f"{query} {sort_clause}"
-
-        # Execute
-        # Note: We need to handle params carefully. Table/Index/View/Proc used TOP(?) so limit is first param.
-        # Database query didn't use TOP.
-        if object_type == 'database':
-             # Manual limit if not using TOP (but we should use TOP for consistency)
-             # Let's add TOP to database query
-             query = query.replace("SELECT", "SELECT TOP (?)", 1)
-             params.insert(0, limit)
-             full_sql = f"{query} {where_clause} {sort_clause}"
 
         _execute_safe(cur, full_sql, tuple(params))
         
@@ -3365,8 +3364,8 @@ def db_sql2019_explain_query(
             finally:
                  try:
                     cur.execute("SET SHOWPLAN_XML OFF")
-                 except:
-                    pass
+                 except Exception as e:
+                    logger.warning(f"Failed to disable SHOWPLAN_XML: {e}")
     finally:
         conn.close()
 
@@ -3392,11 +3391,13 @@ def db_sql2019_server_info_mcp() -> dict[str, Any]:
     """
     try:
         conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT DB_NAME() as database_name")
-        row = cur.fetchone()
-        database_name = row[0] if row else "unknown"
-        conn.close()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT DB_NAME() as database_name")
+            row = cur.fetchone()
+            database_name = row[0] if row else "unknown"
+        finally:
+            conn.close()
     except Exception:
         database_name = "error"
 

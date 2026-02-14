@@ -47,7 +47,7 @@ $env:DB_SERVER="localhost"
 $env:DB_USER="sa"
 $env:DB_PASSWORD="YourPassword123"
 $env:DB_NAME="master"
-$env:DB_DRIVER="ODBC Driver 17 for SQL Server"
+$env:DB_DRIVER="ODBC Driver 18 for SQL Server"
 
 # 3. Run server
 uv run mcp-sql-server
@@ -78,11 +78,11 @@ docker push harryvaldez/mcp_sqlserver:latest
 ```
 Notes:
 - The base image is python:3.11-slim (Debian based).
-- Includes Microsoft ODBC Driver 17 and 18 for SQL Server.
+- Includes Microsoft ODBC Driver 18 for SQL Server.
 - Runs as a non-root `appuser` for enhanced security.
 - Automatically loads environment variables from a `.env` file if present.
 - Verified to handle connection pooling safely without leaks.
-- Default HTTP port is 8085; ensure it is available locally when testing.
+- Default internal port is 8000 (often mapped to 8085 locally); ensure it is available when testing.
 
 ---
 
@@ -165,10 +165,10 @@ Key environment variables supported by the server:
 - `DB_USER` SQL User (also `SQL_USER`).
 - `DB_PASSWORD` SQL Password (also `SQL_PASSWORD`).
 - `DB_NAME` Target Database (also `SQL_DATABASE`).
-- `DB_DRIVER` ODBC Driver name (also `SQL_DRIVER`).
+- `DB_DRIVER` ODBC Driver name (also `SQL_DRIVER`), default `ODBC Driver 18 for SQL Server`.
 - `MCP_TRANSPORT` Transport mode: `sse`, `http` (default), or `stdio`.
 - `MCP_HOST` Host for HTTP transport, default `0.0.0.0`.
-- `MCP_PORT` Port for HTTP transport, default `8000`.
+- `MCP_PORT` Port for HTTP transport, default `8000` (Container internal).
 - `MCP_ALLOW_WRITE` Allow write operations, default `false`.
 - `MCP_CONFIRM_WRITE` Require confirmation for writes, default `false`.
 - `FASTMCP_AUTH_TYPE` Authentication type (`apikey`, `github`, `google`, `azure-ad`, `oidc`, `jwt`).

@@ -21,12 +21,12 @@ docker run -d \
 
 ## Environment Variables
 
-- `DB_SERVER`: SQL Server hostname
-- `DB_NAME`: Database name
-- `DB_USER`: Database user
-- `DB_PASSWORD`: Database password
-- `DB_DRIVER`: ODBC driver (default: `ODBC Driver 18 for SQL Server`)
-- `DB_PORT`: SQL Server port (default: 1433)
+- `SQL_SERVER`: SQL Server hostname (also `DB_SERVER`)
+- `SQL_DATABASE`: Database name (also `DB_NAME`)
+- `SQL_USER`: Database user (also `DB_USER`)
+- `SQL_PASSWORD`: Database password (also `DB_PASSWORD`)
+- `SQL_DRIVER`: ODBC driver (default: `ODBC Driver 18 for SQL Server`) (also `DB_DRIVER`)
+- `SQL_PORT`: SQL Server port (default: 1433) (also `DB_PORT`)
 - `SSH_HOST`: SSH tunnel host (optional)
 - `SSH_PORT`: SSH tunnel port (default: 22)
 - `SSH_USER`: SSH tunnel user (optional)

@@ -113,7 +113,7 @@ docker pull harryvaldez/mcp_sqlserver:latest
 docker run -d \
   --name mcp-sqlserver-http \
   --env-file .env \
-  -p 8085:8085 \
+  -p 8085:8000 \
   harryvaldez/mcp_sqlserver:latest
 
 # 3. Run in Write Mode (HTTP - Secure)
@@ -155,12 +155,14 @@ docker compose up -d
 
 ### Option 3: Local Python (uv)
 
+> **Note:** `SQL_*` aliases (e.g., `SQL_SERVER`) are also supported for backward compatibility.
+
 ```bash
 # Set connection variables
-export SQL_SERVER=localhost
-export SQL_USER=sa
-export SQL_PASSWORD=YourPassword123
-export SQL_DATABASE=master
+export DB_SERVER=localhost
+export DB_USER=sa
+export DB_PASSWORD=YourPassword123
+export DB_NAME=master
 
 # Run in HTTP Mode (SSE)
 export MCP_TRANSPORT=http
@@ -179,10 +181,10 @@ uv run .
 
 ```bash
 # Set connection variables
-export SQL_SERVER=localhost
-export SQL_USER=sa
-export SQL_PASSWORD=YourPassword123
-export SQL_DATABASE=master
+export DB_SERVER=localhost
+export DB_USER=sa
+export DB_PASSWORD=YourPassword123
+export DB_NAME=master
 
 # Run in HTTP Mode (SSE)
 export MCP_TRANSPORT=http
@@ -280,7 +282,7 @@ To prevent the MCP server from becoming unresponsive or overloading the database
 | `DB_ENCRYPT` | Enable encryption (`yes`/`no`) | `no` |
 | `DB_TRUST_CERT` | Trust server certificate (`yes`/`no`) | `yes` |
 | `MCP_HOST` | Host to bind the server to | `0.0.0.0` |
-| `MCP_PORT` | Port to listen on (8000 for Docker, 8085 for local) | `8085` |
+| `MCP_PORT` | Internal container port (Host typically maps 8085->8000) | `8000` (Docker default) |
 | `MCP_TRANSPORT` | Transport mode: `sse`, `http` (uses SSE), or `stdio` | `http` |
 | `MCP_ALLOW_WRITE` | Enable write tools (`db_sql2019_create_db_user`, etc.) | `false` |
 | `MCP_CONFIRM_WRITE` | **Required if ALLOW_WRITE=true**. Safety latch to confirm write mode. | `false` |
@@ -617,5 +619,5 @@ Check your firewall settings (port 1433).
 
 For comments, issues, or feature enhancements, please contact the maintainer or submit an issue to the repository:
 
-- **Repository**: https://github.com/harryvaldez/mcp_cla_ss
+- **Repository**: https://github.com/harryvaldez/mcp-sql-server
 - **Maintainer**: Harry Valdez

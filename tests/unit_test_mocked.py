@@ -113,7 +113,7 @@ class TestMockedTools:
         
         def execute_side_effect(*args, **kwargs):
             sql = args[0] if args else ""
-            if "dm_exec_requests" in sql and "active_sessions" not in locals(): 
+            if "dm_exec_requests" in sql: 
                 # Active sessions query
                 mock_conn.description = [("session_id",), ("login_name",), ("elapsed_seconds",)]
             elif "dm_exec_sessions" in sql and "sleeping" in sql:

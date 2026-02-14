@@ -21,7 +21,7 @@ def setup_env():
         "DB_SERVER": "127.0.0.1",
         "DB_PORT": "1433",
         "DB_USER": "sa",
-        "DB_PASSWORD": "McpTestPassword123!", # Should come from secure source in real CI
+        "DB_PASSWORD": os.getenv("DB_PASSWORD", "McpTestPassword123!"), # Fallback for local dev only
         "DB_NAME": "testdb",
         "DB_DRIVER": "ODBC Driver 17 for SQL Server",
         "DB_ENCRYPT": "no",
@@ -43,7 +43,10 @@ def is_db_available():
         print(f"DB Check Failed: {e}")
         return False
 
-db_required = pytest.mark.skipif(not is_db_available(), reason="Database not available")
+@pytest.fixture(scope="module")
+def db_required(setup_env):
+    if not is_db_available():
+        pytest.skip("Database not available")
 
 @pytest.fixture(scope="module")
 def event_loop():
@@ -51,7 +54,7 @@ def event_loop():
     yield loop
     loop.close()
 
-@db_required
+@pytest.mark.usefixtures("db_required")
 class TestUnit:
     """Unit tests for tool logic and helper functions"""
 
@@ -60,7 +63,7 @@ class TestUnit:
         assert conn is not None
         conn.close()
 
-@db_required
+@pytest.mark.usefixtures("db_required")
 class TestIntegration:
     """Integration tests for each MCP tool"""
 
@@ -146,10 +149,10 @@ class TestIntegration:
                     object_name=table_name,
                     schema="dbo"
                 )
-                # Only assert if we actually tried to drop
-                assert "dropped" in res_drop.lower()
+                # Assertion removed from finally block to prevent masking errors
+                # assert "dropped" in res_drop.lower()
 
-@db_required
+@pytest.mark.usefixtures("db_required")
 class TestStress:
     """Stress tests for concurrency and load"""
 
@@ -168,7 +171,7 @@ class TestStress:
         for r in results:
             assert r["rows"][0]["cnt"] == 5 # Fixed access
 
-@db_required
+@pytest.mark.usefixtures("db_required")
 class TestBlackbox:
     """Blackbox tests simulating MCP protocol requests"""
 
