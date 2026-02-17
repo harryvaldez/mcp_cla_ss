@@ -723,15 +723,21 @@ def _is_sql_readonly(sql: str) -> bool:
     cleaned = _strip_sql_noise(sql).strip().lower()
     if not cleaned:
         return False
-    
+
     # Check for safe read-only EXEC statements
     if cleaned.startswith("exec ") or cleaned.startswith("execute "):
-        # Extract procedure name (first word after EXEC/EXECUTE)
-        tokens = re.findall(r"[a-zA-Z_][a-zA-Z0-9_]*", cleaned)
-        if len(tokens) >= 2 and tokens[1] in _SAFE_READONLY_PROCS:
-            return True
+        # Regex to find the procedure name after EXEC/EXECUTE.
+        # It handles optional schema and brackets.
+        match = re.search(r"^(?:exec|execute)\s+([\w\.\[\]]+)", cleaned)
+        if match:
+            proc_identifier = match.group(1)
+            # Take the last part of a dot-separated name (e.g., dbo.sp_help -> sp_help)
+            # and remove brackets
+            proc_name = proc_identifier.split('.')[-1].strip('[]')
+            if proc_name in _SAFE_READONLY_PROCS:
+                return True
         return False
-    
+
     # Check if first word is a known read-only starting keyword
     first = cleaned.split(None, 1)[0]
     if first not in _READONLY_START:
@@ -1553,11 +1559,20 @@ def db_sql2019_db_stats(database: str | None = None) -> list[dict[str, Any]] | d
 async def serve_query_analysis_report(request: Request) -> HTMLResponse:
     database = request.path_params.get('database', 'N/A')
     
+    conn = get_connection()
     try:
+        # Validate database name against existing databases to prevent SQL injection
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sys.databases")
+        valid_databases = [row.name for row in cur.fetchall()]
+        if database not in valid_databases:
+            return HTMLResponse(content=f"<h1>Error: Database '{database}' not found.</h1>", status_code=404)
+
         # Get database stats and top queries using the existing tools
         stats_result = await asyncio.to_thread(db_sql2019_db_stats.fn, database)
         
         # Query for top 5 long-running queries from Query Store
+        # Use QUOTENAME-style f-string to be safe, although we have validated the name
         query = f"""
         SELECT TOP 5 
             qst.query_sql_text,
@@ -1566,39 +1581,61 @@ async def serve_query_analysis_report(request: Request) -> HTMLResponse:
             qrs.avg_logical_io_reads,
             qrs.count_executions,
             CAST(qrs.last_execution_time AS DATETIME2) as last_execution_time
-        FROM {database}.sys.query_store_query_text qst
-        JOIN {database}.sys.query_store_query q ON qst.query_text_id = q.query_text_id
-        JOIN {database}.sys.query_store_plan p ON q.query_id = p.query_id
-        JOIN {database}.sys.query_store_runtime_stats qrs ON p.plan_id = qrs.plan_id
+        FROM [{database}].sys.query_store_query_text qst
+        JOIN [{database}].sys.query_store_query q ON qst.query_text_id = q.query_text_id
+        JOIN [{database}].sys.query_store_plan p ON q.query_id = p.query_id
+        JOIN [{database}].sys.query_store_runtime_stats qrs ON p.plan_id = qrs.plan_id
         WHERE qrs.avg_duration > 0
         ORDER BY qrs.avg_duration DESC
         """
         
-        conn = get_connection()
-        try:
-            cur = conn.cursor()
-            cur.execute(query)
-            columns = [desc[0] for desc in cur.description]
-            rows = cur.fetchall()
-            
-            # Convert to list of dicts for easier template rendering
-            queries = []
-            for row in rows:
-                query_data = dict(zip(columns, row))
-                # Convert datetime to string for JSON serialization
-                if 'last_execution_time' in query_data and query_data['last_execution_time']:
-                    query_data['last_execution_time'] = query_data['last_execution_time'].isoformat()
-                queries.append(query_data)
-            
+        cur.execute(query)
+        columns = [desc[0] for desc in cur.description]
+        rows = cur.fetchall()
+        
+        # Convert to list of dicts for easier template rendering
+        queries = []
+        for row in rows:
+            query_data = dict(zip(columns, row))
+            # Convert datetime to string for JSON serialization
+            if 'last_execution_time' in query_data and query_data['last_execution_time']:
+                query_data['last_execution_time'] = query_data['last_execution_time'].isoformat()
+            queries.append(query_data)
+
         finally:
             conn.close()
+
+        encrypted_query_found = any(q.get("query_sql_text") == "** Encrypted Text **" for q in queries)
         
-        # Check for encrypted text, which suggests a permissions issue
-        if any(q.get("query_sql_text") == "** Encrypted Text **" for q in queries):
-            return {
-                "error": "Query text is encrypted. This is likely due to missing VIEW DATABASE STATE permissions.",
-                "recommendation": f"Grant VIEW DATABASE STATE permission to the user: GRANT VIEW DATABASE STATE TO [{os.environ.get('DB_USER')}]"
-            }
+        query_section_html = ""
+        if encrypted_query_found:
+            db_user = os.environ.get('DB_USER', 'your_db_user')
+            query_section_html = f'''
+                <div class="error">
+                    <h3>Permission Issue Detected</h3>
+                    <p>The query text is encrypted. This is because the database user \'{db_user}\' does not have the <strong>VIEW DATABASE STATE</strong> permission.</p>
+                    <p>To fix this, please run the following command:</p>
+                    <pre><code>GRANT VIEW DATABASE STATE TO [{db_user}];</code></pre>
+                </div>
+            '''
+        elif queries:
+            query_section_html = ''.join([
+                    f'<div class="query-card">'
+                    f'<h4>Query #{i+1}</h4>'
+                    f'<div class="query-sql">{html.escape(q.get("query_sql_text", "N/A"))}</div>'
+                    f'<div class="metrics">'
+                    f'<div class="metric"><strong>Avg Duration:</strong> {q.get("avg_duration_ms", 0):.2f} ms</div>'
+                    f'<div class="metric"><strong>Avg CPU Time:</strong> {q.get("avg_cpu_time_ms", 0):.2f} ms</div>'
+                    f'<div class="metric"><strong>Avg Logical Reads:</strong> {q.get("avg_logical_io_reads", 0)}</div>'
+                    f'<div class="metric"><strong>Execution Count:</strong> {q.get("count_executions", 0)}</div>'
+                    f'</div>'
+                    f'<div><strong>Last Execution:</strong> {q.get("last_execution_time", "N/A")}</div>'
+                    f'</div>' for i, q in enumerate(queries)
+                ])
+        else:
+            query_section_html = '<p>No long-running queries found in Query Store.</p>'
+        
+        # Generate HTML report
         html_content = f"""
         <!DOCTYPE html>
         <html>
@@ -1627,7 +1664,7 @@ async def serve_query_analysis_report(request: Request) -> HTMLResponse:
                 }}
                 .metrics {{ display: flex; gap: 20px; margin: 10px 0; }}
                 .metric {{ background-color: #e8f4f8; padding: 8px 12px; border-radius: 3px; }}
-                .error {{ color: red; background-color: #ffe6e6; padding: 15px; border-radius: 5px; }}
+                .error {{ color: #D8000C; background-color: #FFBABA; padding: 15px; border-radius: 5px; margin: 20px 0; }}
             </style>
         </head>
         <body>
@@ -1644,19 +1681,7 @@ async def serve_query_analysis_report(request: Request) -> HTMLResponse:
             
             <div class="queries">
                 <h3>Top 5 Long-Running Queries</h3>
-                {''.join([
-                    f'<div class="query-card">'
-                    f'<h4>Query #{i+1}</h4>'
-                    f'<div class="query-sql">{html.escape(q.get("query_sql_text", "N/A"))}</div>'
-                    f'<div class="metrics">'
-                    f'<div class="metric"><strong>Avg Duration:</strong> {q.get("avg_duration_ms", 0):.2f} ms</div>'
-                    f'<div class="metric"><strong>Avg CPU Time:</strong> {q.get("avg_cpu_time_ms", 0):.2f} ms</div>'
-                    f'<div class="metric"><strong>Avg Logical Reads:</strong> {q.get("avg_logical_io_reads", 0)}</div>'
-                    f'<div class="metric"><strong>Execution Count:</strong> {q.get("count_executions", 0)}</div>'
-                    f'</div>'
-                    f'<div><strong>Last Execution:</strong> {q.get("last_execution_time", "N/A")}</div>'
-                    f'</div>' for i, q in enumerate(queries)
-                ]) if queries else '<p>No long-running queries found in Query Store.</p>'}
+                {query_section_html}
             </div>
             
             <div style="margin-top: 30px; padding: 15px; background-color: #e8f4f8; border-radius: 5px;">
@@ -1720,6 +1745,15 @@ def db_sql2019_db_analyze_query_store(database: str) -> dict[str, Any]:
             return {
                 "error": f"Query Store is not enabled for database '{database}'.",
                 "recommendation": f"Enable Query Store by running: ALTER DATABASE [{database}] SET QUERY_STORE = ON;"
+            }
+
+        # Check for VIEW DATABASE STATE permissions
+        cur.execute("SELECT HAS_PERMS_BY_NAME(NULL, 'DATABASE', 'VIEW DATABASE STATE')")
+        has_perms = cur.fetchone()[0]
+        if not has_perms:
+            return {
+                "error": "Query text is encrypted. This is likely due to missing VIEW DATABASE STATE permissions.",
+                "recommendation": f"Grant VIEW DATABASE STATE permission to the user: GRANT VIEW DATABASE STATE TO [{os.environ.get('DB_USER')}]"
             }
     finally:
         conn.close()
@@ -3688,8 +3722,8 @@ def _configure_fastmcp_runtime() -> None:
         import fastmcp
 
         fastmcp.settings.check_for_updates = "off"
-    except pyodbc.Error as e:
-        logger.warning(f"Could not check for active cursors: {e}")
+    except (ImportError, AttributeError) as e:
+        logger.warning(f"Could not configure fastmcp: {e}")
 
 
 DATA_MODEL_CACHE = {}
@@ -4267,70 +4301,53 @@ def db_sql2019_monitor_sessions() -> str:
     return f"Monitor available at: {url}"
 
 
+# Create the ASGI app instance at the module level
+app = mcp.http_app()
+
+# Apply middleware to the global app instance
+app.add_middleware(APIKeyMiddleware)
+app.add_middleware(BrowserFriendlyMiddleware)
+
+
 def main() -> None:
     _configure_fastmcp_runtime()
 
     transport = os.environ.get("MCP_TRANSPORT", "http").strip().lower()
     host = os.environ.get("MCP_HOST", "0.0.0.0")
-    # Default to 8085 to avoid common 8000 conflicts
     port = _env_int("MCP_PORT", 8085)
-    
-    stateless = _env_bool("MCP_STATELESS", False)
-    json_resp = _env_bool("MCP_JSON_RESPONSE", False)
     
     # SSL Configuration for HTTPS
     ssl_cert = os.environ.get("MCP_SSL_CERT")
     ssl_key = os.environ.get("MCP_SSL_KEY")
     
     if transport in {"http", "sse"}:
-        # Configure middleware on the app instance before running
-        app = mcp.http_app()
-        # Clear existing middleware to prevent duplication if main() is called multiple times (unlikely but safe)
-        app.user_middleware.clear() 
-        app.add_middleware(APIKeyMiddleware)
-        app.add_middleware(BrowserFriendlyMiddleware)
-
-        run_kwargs = {
-            "transport": transport,
+        uvicorn_kwargs = {
             "host": host,
             "port": port,
-            "stateless_http": stateless,
-            "json_response": json_resp,
         }
-        
         if ssl_cert and ssl_key:
-            run_kwargs["ssl_certfile"] = ssl_cert
-            run_kwargs["ssl_keyfile"] = ssl_key
+            uvicorn_kwargs["ssl_certfile"] = ssl_cert
+            uvicorn_kwargs["ssl_keyfile"] = ssl_key
             logger.info(f"Starting MCP server with HTTPS enabled using cert: {ssl_cert}")
         
         logger.info(f"Starting MCP server on {host}:{port} ({transport})")
-        mcp.run(**run_kwargs)
+        # Run uvicorn with the global 'app' instance
+        uvicorn.run("server:app", **uvicorn_kwargs)
+
     elif transport == "stdio":
         # Hybrid mode: Start HTTP server in background for UI/Custom Routes
         def run_http_background():
             logger.info(f"Starting background HTTP server for UI on port {port}")
             try:
-                # Suppress Uvicorn logs to prevent stdout pollution (which breaks stdio transport)
-                # Uvicorn defaults to INFO and might print to stdout
                 logging.getLogger("uvicorn").setLevel(logging.WARNING)
                 logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
                 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
                 
-                # Create a new event loop for this thread
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 
-                # Run the MCP's underlying web app directly with uvicorn
-                # This avoids calling mcp.run() twice, which can cause state conflicts.
-                # mcp.http_app() contains all routes: MCP protocol (SSE) and custom UI.
-                
-                # Create app with middleware manually for background server
-                app = mcp.http_app()
-                app.add_middleware(APIKeyMiddleware)
-                app.add_middleware(BrowserFriendlyMiddleware)
-                
                 uvicorn.run(
-                    app,
+                    app,  # Use the global app instance
                     host=host,
                     port=port,
                     log_level="warning"
@@ -4338,14 +4355,11 @@ def main() -> None:
             except Exception as e:
                 logger.error(f"Background HTTP server failed: {e}")
 
-        # Start HTTP server thread
         http_thread = threading.Thread(target=run_http_background, daemon=True)
         http_thread.start()
         
-        # Give it a moment to initialize
         time.sleep(1)
         
-        # Run stdio transport in main thread
         mcp.run(transport="stdio")
     else:
         raise ValueError(f"Unknown transport: {transport}. Supported transports: http, sse, stdio")
