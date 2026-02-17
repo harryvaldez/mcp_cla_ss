@@ -1558,62 +1558,62 @@ def db_sql2019_db_stats(database: str | None = None) -> list[dict[str, Any]] | d
 @mcp.custom_route("/query-analysis/{database}", methods=["GET"])
 async def serve_query_analysis_report(request: Request) -> HTMLResponse:
     database = request.path_params.get('database', 'N/A')
-    
+    # Escape closing brackets in database name to prevent SQL injection.
+    safe_database_name = database.replace(']', ']]')
+    conn = None
     try:
         conn = get_connection()
-        try:
-            # Validate database name against existing databases to prevent SQL injection
-            cur = conn.cursor()
-            cur.execute("SELECT name FROM sys.databases")
-            valid_databases = [row.name for row in cur.fetchall()]
-            if database not in valid_databases:
-                return HTMLResponse(content=f"<h1>Error: Database '{database}' not found.</h1>", status_code=404)
+        # Validate database name against existing databases to prevent SQL injection
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sys.databases")
+        valid_databases = [row.name for row in cur.fetchall()]
+        if database not in valid_databases:
+            return HTMLResponse(content=f"<h1>Error: Database '{database}' not found.</h1>", status_code=404)
 
-            # Get database stats and top queries using the existing tools
-            stats_result = await asyncio.to_thread(db_sql2019_db_stats.fn, database)
-            
-            # Query for top 5 long-running queries from Query Store
-            query = f"""
-            SELECT TOP 5 
-                qst.query_sql_text,
-                qrs.avg_duration / 1000.0 as avg_duration_ms,
-                qrs.avg_cpu_time / 1000.0 as avg_cpu_time_ms,
-                qrs.avg_logical_io_reads,
-                qrs.count_executions,
-                CAST(qrs.last_execution_time AS DATETIME2) as last_execution_time
-            FROM [{database}].sys.query_store_query_text qst
-            JOIN [{database}].sys.query_store_query q ON qst.query_text_id = q.query_text_id
-            JOIN [{database}].sys.query_store_plan p ON q.query_id = p.query_id
-            JOIN [{database}].sys.query_store_runtime_stats qrs ON p.plan_id = qrs.plan_id
-            WHERE qrs.avg_duration > 0
-            ORDER BY qrs.avg_duration DESC
-            """
-            
-            cur.execute(query)
-            columns = [desc[0] for desc in cur.description]
-            rows = cur.fetchall()
-            
-            queries = []
-            for row in rows:
-                query_data = dict(zip(columns, row))
-                if 'last_execution_time' in query_data and query_data['last_execution_time']:
-                    query_data['last_execution_time'] = query_data['last_execution_time'].isoformat()
-                queries.append(query_data)
-        finally:
-            conn.close()
+        # Get database stats and top queries using the existing tools
+        stats_result = await asyncio.to_thread(db_sql2019_db_stats.fn, database)
+        
+        # Query for top 5 long-running queries from Query Store
+        query = f"""
+        SELECT TOP 5 
+            qst.query_sql_text,
+            qrs.avg_duration / 1000.0 as avg_duration_ms,
+            qrs.avg_cpu_time / 1000.0 as avg_cpu_time_ms,
+            qrs.avg_logical_io_reads,
+            qrs.count_executions,
+            CAST(qrs.last_execution_time AS DATETIME2) as last_execution_time
+        FROM [{safe_database_name}].sys.query_store_query_text qst
+        JOIN [{safe_database_name}].sys.query_store_query q ON qst.query_text_id = q.query_text_id
+        JOIN [{safe_database_name}].sys.query_store_plan p ON q.query_id = p.query_id
+        JOIN [{safe_database_name}].sys.query_store_runtime_stats qrs ON p.plan_id = qrs.plan_id
+        WHERE qrs.avg_duration > 0
+        ORDER BY qrs.avg_duration DESC
+        """
+        
+        cur.execute(query)
+        columns = [desc[0] for desc in cur.description]
+        rows = cur.fetchall()
+        
+        queries = []
+        for row in rows:
+            query_data = dict(zip(columns, row))
+            if 'last_execution_time' in query_data and query_data['last_execution_time']:
+                query_data['last_execution_time'] = query_data['last_execution_time'].isoformat()
+            queries.append(query_data)
 
-        # HTML Generation (outside the finally block)
+        # HTML Generation
         encrypted_query_found = any(q.get("query_sql_text") == "** Encrypted Text **" for q in queries)
         
         query_section_html = ""
         if encrypted_query_found:
-            db_user = os.environ.get('DB_USER', 'your_db_user')
+            db_user = os.environ.get('DB_USER', '<your_db_user>')
+            safe_db_user = html.escape(db_user)
             query_section_html = f'''
                 <div class="error">
                     <h3>Permission Issue Detected</h3>
-                    <p>The query text is encrypted. This is because the database user \'{db_user}\' does not have the <strong>VIEW DATABASE STATE</strong> permission.</p>
+                    <p>The query text is encrypted. This is because the database user \'{safe_db_user}\' does not have the <strong>VIEW DATABASE STATE</strong> permission.</p>
                     <p>To fix this, please run the following command:</p>
-                    <pre><code>GRANT VIEW DATABASE STATE TO [{db_user}];</code></pre>
+                    <pre><code>GRANT VIEW DATABASE STATE TO [{safe_db_user}];</code></pre>
                 </div>
             '''
         elif queries:
@@ -1665,12 +1665,15 @@ async def serve_query_analysis_report(request: Request) -> HTMLResponse:
         </head>
         <body>
             <h1>Error Generating Query Store Analysis</h1>
-            <p><strong>Database:</strong> {database}</p>
-            <p><strong>Error:</strong> {str(e)}</p>
+            <p><strong>Database:</strong> {html.escape(database)}</p>
+            <p><strong>Error:</strong> {html.escape(str(e))}</p>
         </body>
         </html>
         """
         return HTMLResponse(content=error_html, status_code=500)
+    finally:
+        if conn:
+            conn.close()
 
 
 @mcp.tool
@@ -1707,7 +1710,7 @@ def db_sql2019_db_analyze_query_store(database: str) -> dict[str, Any]:
         if not has_perms:
             return {
                 "error": "Query text is encrypted. This is likely due to missing VIEW DATABASE STATE permissions.",
-                "recommendation": f"Grant VIEW DATABASE STATE permission to the user: GRANT VIEW DATABASE STATE TO [{os.environ.get('DB_USER')}]"
+                "recommendation": f"Grant VIEW DATABASE STATE permission to the user: GRANT VIEW DATABASE STATE TO [{os.environ.get('DB_USER', '<your_db_user>')}]"
             }
     finally:
         conn.close()
