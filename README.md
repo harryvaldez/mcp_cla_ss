@@ -443,7 +443,7 @@ This server implements strict security practices for logging:
 - `db_sql2019_analyze_logical_data_model(schema: str = "dbo")`: **(Interactive)** Generates a comprehensive HTML report with a **Mermaid.js Entity Relationship Diagram (ERD)**, a **Health Score** (0-100), and detailed findings on normalization, missing keys, and naming conventions. The tool returns a URL to view the report in your browser.
 
 ### ⚡ Performance & Tuning
-- `db_sql2019_analyze_table_health(schema: str, table_name: str, database_name: Optional[str] = None)`: **(Power Tool)** Comprehensive health check for a specific table, including size, indexes, foreign key dependencies, and statistics.
+- `db_sql2019_analyze_table_health(database_name: str, schema: str, table_name: str)`: **(Power Tool)** Comprehensive health check for a specific table, including size, indexes with sizes/types, foreign key dependencies, statistics, and tuning recommendations.
 - `db_sql2019_check_fragmentation(limit: int = 50)`: Identifies fragmented indexes and provides `REBUILD`/`REORGANIZE` commands.
 - `db_sql2019_analyze_indexes(schema: str = None, limit: int = 50)`: Identify unused or missing indexes.
 - `db_sql2019_explain_query(sql: str, analyze: bool = False, output_format: str = "xml")`: Get the XML execution plan for a query.
@@ -535,26 +535,90 @@ Here are some real-world examples of using the tools via an MCP client.
 ]
 
 ### 3. Analyze Table Health (Power Tool)
-**Prompt:** `using sqlserver, call db_sql2019_analyze_table_health(schema='Sales', profile='oltp') and display results`
+**Prompt:** `using sqlserver, call db_sql2019_analyze_table_health(database_name='AdventureWorks', schema='Sales', table_name='SalesOrderHeader') and display results`
 
 **Result:**
 ```json
 {
-  "outdated_statistics": [
+  "database": "AdventureWorks",
+  "schema": "Sales",
+  "table": "SalesOrderHeader",
+  "table_size": {
+    "schema_name": "Sales",
+    "table_name": "SalesOrderHeader",
+    "row_count": 31465,
+    "total_space_mb": 15.50,
+    "used_space_mb": 14.30,
+    "data_space_mb": 12.25,
+    "unused_space_mb": 1.20
+  },
+  "indexes": [
     {
-      "table": "SalesOrderHeader",
-      "stat_name": "_WA_Sys_00000001_12345",
-      "last_updated": "2024-01-01T12:00:00",
-      "mod_percent": 25.5
+      "index_name": "PK_SalesOrderHeader_SalesOrderID",
+      "index_type": "CLUSTERED",
+      "is_unique": 1,
+      "is_primary_key": 1,
+      "fragmentation_percent": 5.5,
+      "page_count": 100,
+      "index_size_mb": 0.78,
+      "index_columns": "SalesOrderID"
+    },
+    {
+      "index_name": "IX_SalesOrderHeader_CustomerID",
+      "index_type": "NONCLUSTERED",
+      "is_unique": 0,
+      "is_primary_key": 0,
+      "fragmentation_percent": 15.2,
+      "page_count": 50,
+      "index_size_mb": 0.39,
+      "index_columns": "CustomerID"
     }
   ],
-  "heap_tables": [
+  "foreign_keys": {
+    "tables_referencing_this": [
+      {
+        "referencing_schema": "Sales",
+        "referencing_table": "SalesOrderDetail",
+        "fk_name": "FK_SalesOrderDetail_SalesOrderHeader",
+        "referencing_columns": "SalesOrderID",
+        "referenced_columns": "SalesOrderID"
+      }
+    ],
+    "tables_referenced_by_this": [
+      {
+        "referenced_schema": "Sales",
+        "referenced_table": "Customer",
+        "fk_name": "FK_SalesOrderHeader_Customer",
+        "referencing_columns": "CustomerID",
+        "referenced_columns": "CustomerID"
+      }
+    ]
+  },
+  "statistics": [
     {
-      "table": "StagingOrders",
-      "rows": 50000
+      "stats_name": "PK_SalesOrderHeader_SalesOrderID",
+      "table_name": "SalesOrderHeader",
+      "last_updated": "2024-01-15T10:30:00",
+      "row_count": 31465,
+      "rows_sampled": 31465,
+      "modification_counter": 2500,
+      "modification_percent": 7.95
     }
   ],
-  "note": "For fragmentation details, use db_sql2019_check_fragmentation()."
+  "recommendations": [
+    {
+      "type": "index_maintenance",
+      "priority": "medium",
+      "message": "Index 'IX_SalesOrderHeader_CustomerID' has 15.20% fragmentation. Consider: ALTER INDEX [IX_SalesOrderHeader_CustomerID] ON [Sales].[SalesOrderHeader] REORGANIZE;"
+    }
+  ],
+  "summary": {
+    "total_indexes": 2,
+    "total_fk_relationships": 2,
+    "total_statistics": 1,
+    "recommendation_count": 1,
+    "high_priority_issues": 0
+  }
 }
 ```
 

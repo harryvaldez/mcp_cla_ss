@@ -212,26 +212,96 @@ class TestMockedTools:
         assert len(result["missing_indexes"]) == 1
 
     def test_analyze_table_health(self, mock_conn):
-        # 1. Stats, 2. Heaps
-        # We need to change description between calls to match the query results
+        # Test the enhanced table health analysis tool
+        # Mock data for multiple queries: table size, indexes, FKs, stats, duplicate indexes
         
         def execute_side_effect(*args, **kwargs):
             sql = args[0] if args else ""
-            if "stats_date" in sql.lower(): # Query for stats
-                 mock_conn.description = [("table",), ("stat_name",)]
-            elif "heap" in sql.lower() or "sys.indexes" in sql.lower(): # Query for heaps
-                 mock_conn.description = [("table",), ("row_count",)]
+            sql_lower = sql.lower()
+            if "total_pages" in sql_lower:  # Table size query
+                mock_conn.description = [
+                    ("schema_name",), ("table_name",), ("row_count",), 
+                    ("total_space_mb",), ("used_space_mb",), ("data_space_mb",), ("unused_space_mb",)
+                ]
+            elif "i.type_desc" in sql_lower:  # Index details query
+                mock_conn.description = [
+                    ("index_name",), ("index_type",), ("is_unique",), ("is_primary_key",),
+                    ("fragmentation_percent",), ("page_count",), ("index_size_mb",), ("index_columns",)
+                ]
+            elif "foreign_keys" in sql_lower:  # Foreign key queries
+                mock_conn.description = [
+                    ("referencing_schema",), ("referencing_table",), ("fk_name",),
+                    ("referencing_columns",), ("referenced_columns",)
+                ]
+            elif "dm_db_stats_properties" in sql_lower:  # Statistics query
+                mock_conn.description = [
+                    ("stats_name",), ("table_name",), ("last_updated",),
+                    ("row_count",), ("rows_sampled",), ("modification_counter",), ("modification_percent",)
+                ]
+            elif "duplicate" in sql_lower:  # Duplicate index check
+                mock_conn.description = [("index1_name",), ("index2_name",), ("issue",)]
             
         mock_conn.execute.side_effect = execute_side_effect
         
+        # Mock fetch results for: size, indexes, referencing FKs, referenced FKs, stats, duplicate indexes
+        from datetime import datetime, timedelta
+        last_updated = datetime.now() - timedelta(days=10)
+        
+        mock_conn.fetchone.return_value = (
+            "dbo", "TestTable", 10000, 150.50, 120.30, 100.25, 30.20  # Table size
+        )
+        
         mock_conn.fetchall.side_effect = [
-            [("table1", "stat1")], # Outdated
-            [("table2", 1000)] # Heaps
+            [  # Indexes
+                ("PK_TestTable", "CLUSTERED", 1, 1, 5.5, 100, 0.78, "id"),
+                ("IX_TestTable_Name", "NONCLUSTERED", 0, 0, 15.2, 50, 0.39, "name")
+            ],
+            [  # Tables referencing this table
+                ("dbo", "ChildTable1", "FK_ChildTable1_TestTable", "parent_id", "id")
+            ],
+            [  # Tables referenced by this table
+                ("dbo", "ParentTable", "FK_TestTable_Parent", "parent_id", "id")
+            ],
+            [  # Statistics
+                ("PK_TestTable", "TestTable", last_updated, 10000, 5000, 2500, 25.0),
+                ("IX_TestTable_Name", "TestTable", last_updated, 10000, 5000, 800, 8.0)
+            ],
+            []  # No duplicate indexes
         ]
         
-        result = server.db_sql2019_analyze_table_health.fn()
-        assert len(result["outdated_statistics"]) == 1
-        assert len(result["heap_tables"]) == 1
+        result = server.db_sql2019_analyze_table_health.fn(database_name="TestDB", schema="dbo", table_name="TestTable")
+        
+        # Verify the result structure
+        assert result["database"] == "TestDB"
+        assert result["schema"] == "dbo"
+        assert result["table"] == "TestTable"
+        assert "table_size" in result
+        assert "indexes" in result
+        assert "foreign_keys" in result
+        assert "statistics" in result
+        assert "recommendations" in result
+        assert "summary" in result
+        
+        # Verify table size data
+        assert result["table_size"]["row_count"] == 10000
+        assert result["table_size"]["total_space_mb"] == 150.50
+        
+        # Verify indexes
+        assert len(result["indexes"]) == 2
+        assert result["indexes"][0]["index_name"] == "PK_TestTable"
+        assert result["indexes"][0]["index_type"] == "CLUSTERED"
+        
+        # Verify foreign keys
+        assert len(result["foreign_keys"]["tables_referencing_this"]) == 1
+        assert len(result["foreign_keys"]["tables_referenced_by_this"]) == 1
+        
+        # Verify statistics
+        assert len(result["statistics"]) == 2
+        
+        # Verify recommendations (should have fragmentation and stale stats recommendations)
+        assert len(result["recommendations"]) > 0
+        assert result["summary"]["total_indexes"] == 2
+        assert result["summary"]["total_fk_relationships"] == 2
 
     def test_db_sec_perf_metrics(self, mock_conn):
         # 1. Orphaned (fetchall), 2. Auth (fetchone), 3. PLE (fetchone), 4. Buffer Hit (fetchone)
