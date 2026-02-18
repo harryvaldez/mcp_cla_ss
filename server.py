@@ -2676,8 +2676,9 @@ def db_sql2019_analyze_table_health(
                 })
         
         # Unused space recommendation
-        unused_mb = table_size.get('unused_space_mb', 0) or 0
-        if unused_mb > (total_mb * 0.2):  # More than 20% unused
+        unused_mb = float(table_size.get('unused_space_mb', 0) or 0)
+        total_mb = float(table_size.get('total_space_mb', 0) or 0)
+        if total_mb > 0 and unused_mb > (total_mb * 0.2):  # More than 20% unused
             recommendations.append({
                 "type": "space_reclaim",
                 "priority": "low",
