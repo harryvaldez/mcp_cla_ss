@@ -848,7 +848,7 @@ Here are some real-world examples of using the tools via an MCP client.
 ```
 
 ### 6. Logical Data Model Analysis
-**Prompt:** `using sqlserver, call db_sql2019_analyze_logical_data_model(database_name='USGISPRO_800', schema='dbo') and display results`
+**Prompt:** `using sqlserver_readonly, call db_sql2019_analyze_logical_data_model(database_name='USGISPRO_800', schema='dbo') and display results`
 
 **Result:**
 ```json
@@ -856,19 +856,19 @@ Here are some real-world examples of using the tools via an MCP client.
   "message": "Analysis complete for database 'USGISPRO_800' schema 'dbo'. View the interactive ERD report at the URL below.",
   "database": "USGISPRO_800",
   "schema": "dbo",
-  "report_url": "http://localhost:8085/data-model-analysis?id=abc123-def456-ghi789",
+  "report_url": "http://localhost:8000/data-model-analysis?id=5711f174-d4ee-4d97-992f-1ca6aaffadf4",
   "summary": {
     "database": "USGISPRO_800",
     "schema": "dbo",
-    "generated_at_utc": "2024-12-18T14:30:45.123456",
-    "entities": 15,
-    "relationships": 8,
+    "generated_at_utc": "2026-02-18T20:25:22.710000",
+    "entities": 265,
+    "relationships": 293,
     "issues_count": {
-      "entities": 2,
-      "attributes": 3,
-      "relationships": 1,
-      "identifiers": 1,
-      "normalization": 2
+      "entities": 247,
+      "attributes": 3061,
+      "relationships": 240,
+      "identifiers": 75,
+      "normalization": 0
     }
   }
 }
