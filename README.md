@@ -513,26 +513,18 @@ Here are some real-world examples of using the tools via an MCP client.
 **Prompt:** `using sqlserver, call db_sql2019_server_info() and display results`
 
 **Result:**
-[
-  {
-    "output": [
-      {
-        "id": "msg_02a73438078d67640069954a1156f48190a837815c6f70ead8",
-        "type": "message",
-        "status": "completed",
-        "content": [
-          {
-            "type": "output_text",
-            "annotations": [],
-            "logprobs": [],
-            "text": "Here are the server details:\n\n- Database: master\n- Current user: n8n_DBMonitor\n- Server: gisdevsql01\n- Address: 10.125.1.7\n- Port: 1433\n- SQL Server version: Microsoft SQL Server 2019 (RTM-CU32-GDR) (KB5068404) - 15.0.4455.2 (X64)\n  - Build/date: Oct 7 2025 21:10:15\n  - Edition: Developer Edition (64-bit)\n  - OS: Windows Server 2019 Datacenter\n- Allow write: false\n- Default max rows: 500\n\nIf you’d like, I can format this differently or extract specific fields."
-          }
-        ],
-        "role": "assistant"
-      }
-    ]
-  }
-]
+```json
+{
+  "database": "master",
+  "user": "n8n_DBMonitor",
+  "server_name": "gisdevsql01",
+  "server_addr": "10.125.1.7",
+  "server_port": 1433,
+  "version": "Microsoft SQL Server 2019 (RTM-CU32-GDR) (KB5068404) - 15.0.4455.2 (X64) \n\tOct  7 2025 21:10:15 \n\tCopyright (C) 2019 Microsoft Corporation\n\tDeveloper Edition (64-bit) on Windows Server 2019 Datacenter 10.0 <X64> (Build 17763: ) (Hypervisor)\n",
+  "allow_write": false,
+  "default_max_rows": 500
+}
+```
 
 ### 3. Analyze Table Health (Power Tool)
 **Prompt:** `using sqlserver, call db_sql2019_analyze_table_health(database_name='USGISPRO_800', schema='dbo', table_name='Account') and display results`
