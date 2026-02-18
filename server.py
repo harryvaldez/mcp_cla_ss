@@ -2513,15 +2513,16 @@ def db_sql2019_analyze_table_health(
             ISNULL(ps.avg_fragmentation_in_percent, 0) AS fragmentation_percent,
             ISNULL(ps.page_count, 0) AS page_count,
             CAST(ROUND((ISNULL(ps.page_count, 0) * 8.0) / 1024.0, 2) AS DECIMAL(36, 2)) AS index_size_mb,
-            STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS index_columns
+            (SELECT STUFF((SELECT ', ' + c.name 
+                           FROM sys.index_columns ic2 
+                           JOIN sys.columns c ON ic2.object_id = c.object_id AND ic2.column_id = c.column_id
+                           WHERE ic2.object_id = i.object_id AND ic2.index_id = i.index_id 
+                           ORDER BY ic2.key_ordinal
+                           FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '')) AS index_columns
         FROM sys.indexes i
         LEFT JOIN sys.dm_db_index_physical_stats(DB_ID(), OBJECT_ID(?), NULL, NULL, 'SAMPLED') ps
             ON i.object_id = ps.object_id AND i.index_id = ps.index_id
-        LEFT JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-        LEFT JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
-        WHERE i.object_id = OBJECT_ID(?) AND i.type > 0
-        GROUP BY i.index_id, i.name, i.type_desc, i.is_unique, i.is_primary_key, 
-                 ps.avg_fragmentation_in_percent, ps.page_count;
+        WHERE i.object_id = OBJECT_ID(?) AND i.type > 0;
         """
         _execute_safe(cur, index_sql, (full_table_name, full_table_name))
         columns = [column[0] for column in cur.description]
@@ -2533,12 +2534,16 @@ def db_sql2019_analyze_table_health(
             OBJECT_SCHEMA_NAME(fk.parent_object_id) AS referencing_schema,
             OBJECT_NAME(fk.parent_object_id) AS referencing_table,
             fk.name AS fk_name,
-            STRING_AGG(COL_NAME(fkc.parent_object_id, fkc.parent_column_id), ', ') AS referencing_columns,
-            STRING_AGG(COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id), ', ') AS referenced_columns
+            (SELECT STUFF((SELECT ', ' + COL_NAME(fkc2.parent_object_id, fkc2.parent_column_id)
+                           FROM sys.foreign_key_columns fkc2
+                           WHERE fkc2.constraint_object_id = fk.object_id
+                           FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '')) AS referencing_columns,
+            (SELECT STUFF((SELECT ', ' + COL_NAME(fkc2.referenced_object_id, fkc2.referenced_column_id)
+                           FROM sys.foreign_key_columns fkc2
+                           WHERE fkc2.constraint_object_id = fk.object_id
+                           FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '')) AS referenced_columns
         FROM sys.foreign_keys fk
-        INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
-        WHERE fk.referenced_object_id = OBJECT_ID(?)
-        GROUP BY fk.parent_object_id, fk.name;
+        WHERE fk.referenced_object_id = OBJECT_ID(?);
         """
         _execute_safe(cur, referencing_sql, (full_table_name,))
         columns = [column[0] for column in cur.description]
@@ -2550,12 +2555,16 @@ def db_sql2019_analyze_table_health(
             OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS referenced_schema,
             OBJECT_NAME(fk.referenced_object_id) AS referenced_table,
             fk.name AS fk_name,
-            STRING_AGG(COL_NAME(fkc.parent_object_id, fkc.parent_column_id), ', ') AS referencing_columns,
-            STRING_AGG(COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id), ', ') AS referenced_columns
+            (SELECT STUFF((SELECT ', ' + COL_NAME(fkc2.parent_object_id, fkc2.parent_column_id)
+                           FROM sys.foreign_key_columns fkc2
+                           WHERE fkc2.constraint_object_id = fk.object_id
+                           FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '')) AS referencing_columns,
+            (SELECT STUFF((SELECT ', ' + COL_NAME(fkc2.referenced_object_id, fkc2.referenced_column_id)
+                           FROM sys.foreign_key_columns fkc2
+                           WHERE fkc2.constraint_object_id = fk.object_id
+                           FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '')) AS referenced_columns
         FROM sys.foreign_keys fk
-        INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
-        WHERE fk.parent_object_id = OBJECT_ID(?)
-        GROUP BY fk.referenced_object_id, fk.name;
+        WHERE fk.parent_object_id = OBJECT_ID(?);
         """
         _execute_safe(cur, referenced_sql, (full_table_name,))
         columns = [column[0] for column in cur.description]
@@ -2579,9 +2588,9 @@ def db_sql2019_analyze_table_health(
         columns = [column[0] for column in cur.description]
         statistics = [dict(zip(columns, row)) for row in cur.fetchall()]
         
-        # 6. Check for duplicate indexes
+        # 6. Check for duplicate indexes (simplified check)
         duplicate_index_sql = """
-        SELECT 
+        SELECT DISTINCT
             i1.name AS index1_name,
             i2.name AS index2_name,
             'Duplicate index detected' AS issue
@@ -2589,21 +2598,12 @@ def db_sql2019_analyze_table_health(
         INNER JOIN sys.indexes i2 ON i1.object_id = i2.object_id 
             AND i1.index_id < i2.index_id
         WHERE i1.object_id = OBJECT_ID(?)
-        AND EXISTS (
-            SELECT ic1.column_id
-            FROM sys.index_columns ic1
-            WHERE ic1.object_id = i1.object_id AND ic1.index_id = i1.index_id AND ic1.is_included_column = 0
-            EXCEPT
-            SELECT ic2.column_id
-            FROM sys.index_columns ic2
-            WHERE ic2.object_id = i2.object_id AND ic2.index_id = i2.index_id AND ic2.is_included_column = 0
-        )
         AND NOT EXISTS (
-            SELECT ic1.column_id
+            SELECT ic1.column_id, ic1.key_ordinal
             FROM sys.index_columns ic1
             WHERE ic1.object_id = i1.object_id AND ic1.index_id = i1.index_id AND ic1.is_included_column = 0
             EXCEPT
-            SELECT ic2.column_id
+            SELECT ic2.column_id, ic2.key_ordinal
             FROM sys.index_columns ic2
             WHERE ic2.object_id = i2.object_id AND ic2.index_id = i2.index_id AND ic2.is_included_column = 0
         );
