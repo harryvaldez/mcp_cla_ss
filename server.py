@@ -26,6 +26,7 @@ from starlette.requests import Request
 from starlette.responses import PlainTextResponse, JSONResponse, HTMLResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware import Middleware
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.applications import Starlette
 from starlette.routing import Route
 import uvicorn
@@ -4821,6 +4822,11 @@ def main() -> None:
         app = mcp.http_app()
         # Clear existing middleware to prevent duplication if main() is called multiple times (unlikely but safe)
         app.user_middleware.clear() 
+        
+        # Add session middleware for session persistence
+        session_secret = os.environ.get("MCP_SESSION_SECRET", "default-session-secret-change-in-production")
+        app.add_middleware(SessionMiddleware, secret_key=session_secret)
+        
         app.add_middleware(APIKeyMiddleware)
         app.add_middleware(BrowserFriendlyMiddleware)
 
