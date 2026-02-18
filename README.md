@@ -440,7 +440,6 @@ This server implements strict security practices for logging:
 
 ### ⚡ Performance & Tuning (Always Available)
 - `db_sql2019_analyze_table_health(database_name: str, schema: str, table_name: str)`: **(Enhanced Power Tool)** Comprehensive health check for a specific table, including size analysis, index fragmentation, foreign key dependencies, statistics health, **missing constraint analysis** (foreign keys, check constraints, defaults, primary keys), and **enhanced index recommendations** (missing FK indexes, disabled indexes, unused large indexes, redundant indexes). Returns actionable tuning recommendations with severity levels.
-- `db_sql2019_analyze_indexes(schema: str = None, limit: int = 50)`: Identify unused and missing indexes using SQL Server DMVs.
 - `db_sql2019_explain_query(sql: str, analyze: bool = False, output_format: str = "xml")`: Get the XML execution plan for a query.
 
 ### 🕵️ Session & Security (Always Available)
