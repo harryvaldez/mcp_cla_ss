@@ -512,6 +512,157 @@ Here are some real-world examples of using the tools via an MCP client.
 }
 ```
 
+### 2. Query Store Performance Analysis
+**Prompt:** `using sqlserver_readonly, call db_sql2019_show_top_queries(database='USGISPRO_800') and display results`
+
+**Result:**
+```json
+{
+  "database": "USGISPRO_800",
+  "query_store_enabled": true,
+  "query_store_config": {
+    "state": "READ_WRITE",
+    "current_storage_mb": 256,
+    "max_storage_mb": 1024,
+    "stale_threshold_days": 30,
+    "capture_mode": "AUTO"
+  },
+  "analysis_period": {
+    "earliest_data": "2024-02-01T00:00:00",
+    "latest_data": "2024-02-18T16:30:00",
+    "days_covered": 17
+  },
+  "long_running_queries": [
+    {
+      "query_id": 1250,
+      "query_text": "SELECT TOP 1000 * FROM large_table lt JOIN other_table ot ON lt.id = ot.foreign_id WHERE lt.status = 'ACTIVE' AND ot.created_date > '2024-01-01'",
+      "executions": 2500,
+      "avg_duration_ms": 3200.5,
+      "avg_cpu_ms": 2100.8,
+      "avg_logical_io_reads": 75000,
+      "object_name": "large_table"
+    },
+    {
+      "query_id": 892,
+      "query_text": "SELECT * FROM user_sessions us LEFT JOIN user_profiles up ON us.user_id = up.user_id WHERE us.last_activity > DATEADD(day, -30, GETDATE())",
+      "executions": 1800,
+      "avg_duration_ms": 2800.2,
+      "avg_cpu_ms": 1850.3,
+      "avg_logical_io_reads": 62000,
+      "object_name": "user_sessions"
+    }
+  ],
+  "regressed_queries": [
+    {
+      "query_id": 445,
+      "query_text": "SELECT COUNT(*) FROM orders o INNER JOIN customers c ON o.customer_id = c.customer_id WHERE o.order_date >= @start_date",
+      "recent_executions": 450,
+      "recent_avg_duration_ms": 1850.0,
+      "older_avg_duration_ms": 850.0,
+      "regression_percent": 117.6,
+      "recent_avg_cpu_ms": 1200.5
+    }
+  ],
+  "high_cpu_queries": [
+    {
+      "query_id": 678,
+      "query_text": "SELECT DISTINCT p.product_name FROM products p CROSS APPLY (SELECT TOP 10 * FROM product_reviews pr WHERE pr.product_id = p.product_id ORDER BY pr.rating DESC) pr WHERE p.category_id IN (SELECT category_id FROM categories WHERE parent_category_id IS NULL)",
+      "executions": 320,
+      "avg_cpu_ms": 850.7,
+      "max_cpu_ms": 2100.3,
+      "avg_duration_ms": 1200.4,
+      "avg_logical_io_reads": 45000
+    }
+  ],
+  "high_io_queries": [
+    {
+      "query_id": 901,
+      "query_text": "SELECT * FROM audit_log al WHERE al.action_timestamp BETWEEN @start_date AND @end_date AND al.user_id = @user_id ORDER BY al.action_timestamp DESC",
+      "executions": 890,
+      "avg_logical_io_reads": 185000,
+      "avg_logical_io_writes": 1200,
+      "avg_physical_io_reads": 4500,
+      "avg_duration_ms": 950.2,
+      "avg_cpu_ms": 650.8
+    }
+  ],
+  "high_execution_queries": [
+    {
+      "query_id": 234,
+      "query_text": "SELECT TOP 1 setting_value FROM system_settings WHERE setting_key = 'CACHE_TIMEOUT'",
+      "executions": 15000,
+      "avg_duration_ms": 45.2,
+      "avg_cpu_ms": 12.8,
+      "avg_logical_io_reads": 8
+    }
+  ],
+  "recommendations": [
+    {
+      "type": "long_running_query",
+      "priority": "high",
+      "query_id": 1250,
+      "issue": "Query with 3200ms average duration executed 2500 times",
+      "recommendation": "Analyze execution plan for missing indexes, table scans, or inefficient joins. Consider query optimization or index creation.",
+      "potential_actions": [
+        "Review execution plan for optimization opportunities",
+        "Check for missing indexes on join/filter columns",
+        "Consider query parameterization if using literals",
+        "Evaluate if query can be rewritten for better performance"
+      ]
+    },
+    {
+      "type": "regressed_query",
+      "priority": "high",
+      "query_id": 445,
+      "issue": "Query performance regressed by 117.6% (from 850ms to 1850ms)",
+      "recommendation": "Investigate recent plan changes or data/statistics modifications. Check for parameter sniffing issues or stale statistics.",
+      "potential_actions": [
+        "Compare execution plans between time periods",
+        "Update statistics on relevant tables",
+        "Check for parameter sniffing issues",
+        "Force a better execution plan if regression persists"
+      ]
+    },
+    {
+      "type": "high_io_query",
+      "priority": "medium",
+      "query_id": 901,
+      "issue": "Query with high I/O: 185000 logical reads, 4500 physical reads",
+      "recommendation": "Optimize I/O patterns by improving index coverage, reducing table scans, or implementing proper indexing strategy.",
+      "potential_actions": [
+        "Create covering indexes to reduce logical reads",
+        "Review execution plan for table/clustered index scans",
+        "Consider index defragmentation if fragmentation is high",
+        "Optimize WHERE clauses for better selectivity"
+      ]
+    },
+    {
+      "type": "frequently_executed_poor_query",
+      "priority": "high",
+      "query_id": 234,
+      "issue": "Frequently executed query (15000 times) with poor performance (45.2ms average)",
+      "recommendation": "High-impact query needing immediate optimization. Small improvements here can yield significant overall performance gains.",
+      "potential_actions": [
+        "Prioritize this query for optimization",
+        "Consider query result caching if appropriate",
+        "Review application logic for unnecessary executions",
+        "Implement proper indexing for this critical query"
+      ]
+    }
+  ],
+  "summary": {
+    "long_running_queries_count": 2,
+    "regressed_queries_count": 1,
+    "high_cpu_queries_count": 1,
+    "high_io_queries_count": 1,
+    "high_execution_queries_count": 1,
+    "total_recommendations": 4,
+    "high_priority_recommendations": 3,
+    "analysis_timestamp": "2024-02-18T16:30:00"
+  }
+}
+```
+
 ### 3. Analyze Table Health (Power Tool)
 **Prompt:** `using sqlserver, call db_sql2019_analyze_table_health(database_name='USGISPRO_800', schema='dbo', table_name='Account') and display results`
 
