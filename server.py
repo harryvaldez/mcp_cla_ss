@@ -3173,7 +3173,8 @@ def db_sql2019_show_top_queries(database_name: str) -> dict[str, Any]:
 
         long_running = []
         for row in cur.fetchall():
-            query_text = row[0][:500] + "..." if len(row[0]) > 500 else row[0]
+            query_text = row[0] if row[0] is not None else ""
+            query_text = query_text[:500] + "..." if len(query_text) > 500 else query_text
             long_running.append({
                 "query_id": row[1],
                 "query_text": query_text,
@@ -3239,7 +3240,8 @@ def db_sql2019_show_top_queries(database_name: str) -> dict[str, Any]:
 
         regressed = []
         for row in cur.fetchall():
-            query_text = row[0][:500] + "..." if len(row[0]) > 500 else row[0]
+            query_text = row[0] if row[0] is not None else ""
+            query_text = query_text[:500] + "..." if len(query_text) > 500 else query_text
             regressed.append({
                 "query_id": row[1],
                 "query_text": query_text,
@@ -3277,7 +3279,8 @@ def db_sql2019_show_top_queries(database_name: str) -> dict[str, Any]:
 
         high_cpu = []
         for row in cur.fetchall():
-            query_text = row[0][:500] + "..." if len(row[0]) > 500 else row[0]
+            query_text = row[0] if row[0] is not None else ""
+            query_text = query_text[:500] + "..." if len(query_text) > 500 else query_text
             high_cpu.append({
                 "query_id": row[1],
                 "query_text": query_text,
@@ -3316,7 +3319,8 @@ def db_sql2019_show_top_queries(database_name: str) -> dict[str, Any]:
 
         high_io = []
         for row in cur.fetchall():
-            query_text = row[0][:500] + "..." if len(row[0]) > 500 else row[0]
+            query_text = row[0] if row[0] is not None else ""
+            query_text = query_text[:500] + "..." if len(query_text) > 500 else query_text
             high_io.append({
                 "query_id": row[1],
                 "query_text": query_text,
@@ -3354,7 +3358,8 @@ def db_sql2019_show_top_queries(database_name: str) -> dict[str, Any]:
 
         high_execution = []
         for row in cur.fetchall():
-            query_text = row[0][:500] + "..." if len(row[0]) > 500 else row[0]
+            query_text = row[0] if row[0] is not None else ""
+            query_text = query_text[:500] + "..." if len(query_text) > 500 else query_text
             high_execution.append({
                 "query_id": row[1],
                 "query_text": query_text,
@@ -3448,20 +3453,6 @@ def db_sql2019_show_top_queries(database_name: str) -> dict[str, Any]:
                     "Consider query result caching if appropriate",
                     "Review application logic for unnecessary executions",
                     "Implement proper indexing for this critical query"
-                ]
-            })
-
-        # General recommendations
-        if not results["query_store_enabled"]:
-            recommendations.insert(0, {
-                "type": "query_store_setup",
-                "priority": "high",
-                "issue": "Query Store is not enabled",
-                "recommendation": "Enable Query Store to automatically capture query performance data and execution plans for analysis.",
-                "potential_actions": [
-                    "ALTER DATABASE [database_name] SET QUERY_STORE = ON;",
-                    "Configure appropriate storage limits and cleanup policies",
-                    "Set capture mode to AUTO for comprehensive coverage"
                 ]
             })
 
