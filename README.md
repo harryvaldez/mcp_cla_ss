@@ -445,6 +445,7 @@ This server implements strict security practices for logging:
 ### ⚡ Performance & Tuning (Always Available)
 - `db_sql2019_analyze_table_health(database_name: str, schema: str, table_name: str)`: **(Enhanced Power Tool)** Comprehensive health check for a specific table, including size analysis, index fragmentation, foreign key dependencies, statistics health, **missing constraint analysis** (foreign keys, check constraints, defaults, primary keys), and **enhanced index recommendations** (missing FK indexes, disabled indexes, unused large indexes, redundant indexes). Returns actionable tuning recommendations with severity levels.
 - `db_sql2019_show_top_queries(database_name: str)`: **(Query Store Analysis)** Analyzes Query Store data to identify top problematic queries including long-running queries, regressed queries (performance degradation), high CPU consumption, high I/O queries, and frequently executed poor-performing queries. Provides specific recommendations for each issue with actionable steps. **Prerequisite**: Query Store must be enabled on the target database (not enabled by default in SQL Server 2019). If disabled, the tool will return empty results or errors. To enable: `ALTER DATABASE [database_name] SET QUERY_STORE = ON;`
+- `db_sql2019_open_logical_model(database_name: str)`: **(Interactive ERD)** Generates an interactive Entity-Relationship Diagram (ERD) webpage depicting all entities (tables), their columns, data types, constraints, and relationships. Returns a URL to view the interactive ERD with pan/zoom controls, detailed entity analysis, and design recommendations.
 - `db_sql2019_generate_ddl(database_name: str, object_name: str, object_type: str)`: **(DDL Generation)** Generate complete DDL (CREATE/ALTER) statements to recreate database objects. Supports tables, views, indexes, functions, procedures, and triggers. Returns object metadata, dependencies, and production-ready DDL with proper constraints and indexes.
 - `db_sql2019_explain_query(sql: str, analyze: bool = False, output_format: str = "xml")`: Get the XML execution plan for a query.
 
@@ -1142,6 +1143,42 @@ Here are some real-world examples of using the tools via an MCP client.
   }
 }
 ```
+
+### 8. Interactive ERD Generation
+**Prompt:** `using sqlserver, call db_sql2019_open_logical_model(database_name='USGISPRO_800') and display results`
+
+**Result:**
+```json
+{
+  "message": "ERD webpage generated for database 'USGISPRO_800'. View the interactive diagram at the URL below.",
+  "database": "USGISPRO_800",
+  "erd_url": "http://localhost:8085/data-model-analysis?id=5711f174-d4ee-4d97-992f-1ca6aaffadf4",
+  "summary": {
+    "database": "USGISPRO_800",
+    "schema": "dbo",
+    "generated_at_utc": "2026-02-19T11:15:00.000000",
+    "entities": 265,
+    "relationships": 293,
+    "issues_count": {
+      "entities": 247,
+      "attributes": 3061,
+      "relationships": 240,
+      "identifiers": 75,
+      "normalization": 0
+    }
+  }
+}
+```
+
+**Interactive ERD Features:**
+- **Entity-Relationship Diagram**: Interactive Mermaid.js diagram with pan/zoom controls
+- **Entity Details**: Click entities to view column details, data types, and constraints
+- **Relationship Visualization**: Visual representation of foreign key relationships
+- **Design Analysis**: Naming convention issues, normalization problems, and recommendations
+- **Health Score**: Overall schema quality score (100 - issues × 2)
+- **Detailed Tables**: Comprehensive entity structure with PKs, FKs, and indexes
+
+*Open the `erd_url` in your browser to view the full interactive ERD and analysis!*
 
 ---
 

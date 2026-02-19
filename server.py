@@ -4841,14 +4841,29 @@ def db_sql2019_analyze_logical_data_model(
                 "recommendations": recommendations,
             }
             
-            return result_data
+            # Cache the result for the web UI
+            analysis_id = str(uuid.uuid4())
+            DATA_MODEL_CACHE[analysis_id] = result_data
+            
+            # Construct URL for the ERD webpage
+            port = os.environ.get("MCP_PORT", "8085")
+            host = os.environ.get("MCP_HOST", "localhost")
+            if host == "0.0.0.0":
+                host = "localhost"
+            
+            url = f"http://{host}:{port}/data-model-analysis?id={analysis_id}"
+            
+            return {
+                "message": f"ERD webpage generated for database '{database_name}'. View the interactive diagram at the URL below.",
+                "database": database_name,
+                "erd_url": url,
+                "summary": summary
+            }
     finally:
         conn.close()
 
 
-
-
-
+@mcp.tool
 def db_sql2019_run_query(sql: str, params_json: str | None = None, max_rows: int | None = None) -> dict[str, Any]:
     """
     Execute a read-only SQL query against the database.
