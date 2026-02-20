@@ -10,15 +10,16 @@ async def list_tools():
         # Configure the runtime to ensure all decorators are processed
         _configure_fastmcp_runtime()
         
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         print("Available tools:")
         
-        # mcp.get_tools() returns a list of tool names (strings)
-        for tool_name in tools:
+        # mcp.list_tools() returns a list of tool objects
+        tool_names = [tool.name for tool in tools]
+        for tool_name in tool_names:
             print(f"- {tool_name}")
         
         # Check specifically for our tool
-        if "db_sql2019_db_analyze_query_store" in tools:
+        if "db_sql2019_db_analyze_query_store" in tool_names:
             print("\n✓ db_sql2019_db_analyze_query_store is available!")
         else:
             print("\n✗ db_sql2019_db_analyze_query_store is NOT available!")

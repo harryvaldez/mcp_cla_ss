@@ -5672,8 +5672,6 @@ def main() -> None:
             "transport": transport,
             "host": host,
             "port": port,
-            "stateless_http": stateless,
-            "json_response": json_resp,
         }
         
         if ssl_cert and ssl_key:
