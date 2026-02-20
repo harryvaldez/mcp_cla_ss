@@ -21,6 +21,8 @@ from typing import Any, Optional
 
 from sshtunnel import SSHTunnelForwarder
 from fastmcp import FastMCP
+mcp = FastMCP("mcp-sqlserver", dependencies=["pyodbc", "sqlalchemy"])
+app = mcp
 import pyodbc
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse, JSONResponse, HTMLResponse, RedirectResponse
