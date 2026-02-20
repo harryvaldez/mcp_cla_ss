@@ -5485,49 +5485,106 @@ DATA_MODEL_HTML = """
         }
 
         function generateMermaid(model) {
-            let s = 'erDiagram\\n';
+            let s = 'erDiagram\n';
             
-            // Helper to sanitize names for Mermaid
-            const safeName = (name) => name.replace(/[^a-zA-Z0-9_]/g, '_');
-            const safeType = (type) => type.replace(/\\s+/g, '_');
+            // Helper to sanitize names for Mermaid - less aggressive sanitization
+            const safeName = (name) => {
+                // Replace problematic characters but keep some readability
+                return name.replace(/[^a-zA-Z0-9_]/g, '_').replace(/^_+|_+$/g, '');
+            };
+            
+            const safeType = (type) => {
+                // Clean up data types for Mermaid
+                return type.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_()]/g, '');
+            };
 
-            // Entities
-            model.entities.forEach(e => {
-                const entityName = safeName(e.name);
-                s += `    ${entityName} {\n`;
-                // Add PKs first
-                e.attributes.forEach(a => {
-                    const isPk = e.primary_key.includes(a.name);
-                    const isFk = e.foreign_keys.some(fk => fk.local_columns.includes(a.name));
-                    
-                    let type = safeType(a.data_type);
-                    if (a.max_length) type += `(${a.max_length})`;
-                    
-                    let markers = [];
-                    if (isPk) markers.push('PK');
-                    if (isFk) markers.push('FK');
-                    
-                    // Attribute name might need quotes if it has special chars, but for ERD
-                    // Mermaid expects word-like tokens. We'll use safeName just in case.
-                    s += `        ${type} ${safeName(a.name)} ${markers.length ? '"' + markers.join(', ') + '"' : ''}\n`;
+            // Entities with proper error handling
+            if (model.entities && Array.isArray(model.entities)) {
+                model.entities.forEach(e => {
+                    try {
+                        if (!e.name) return; // Skip entities without names
+                        
+                        const entityName = safeName(e.name);
+                        if (!entityName) return; // Skip if name becomes empty after sanitization
+                        
+                        s += `    ${entityName} {\n`;
+                        
+                        // Add attributes with proper formatting
+                        if (e.attributes && Array.isArray(e.attributes)) {
+                            e.attributes.forEach(a => {
+                                try {
+                                    if (!a.name) return;
+                                    
+                                    const isPk = e.primary_key && Array.isArray(e.primary_key) && e.primary_key.includes(a.name);
+                                    const isFk = e.foreign_keys && Array.isArray(e.foreign_keys) && 
+                                                e.foreign_keys.some(fk => fk.local_columns && fk.local_columns.includes(a.name));
+                                    
+                                    let type = safeType(a.data_type || 'varchar');
+                                    if (a.max_length && a.max_length !== -1) {
+                                        type += `(${a.max_length})`;
+                                    }
+                                    
+                                    const attrName = safeName(a.name);
+                                    if (!attrName) return; // Skip if attribute name becomes empty
+                                    
+                                    let markers = [];
+                                    if (isPk) markers.push('PK');
+                                    if (isFk) markers.push('FK');
+                                    
+                                    // Proper Mermaid ERD attribute syntax
+                                    s += `        ${type} ${attrName}`;
+                                    if (markers.length > 0) {
+                                        s += ` "${markers.join(', ')}"`;
+                                    }
+                                    s += '\n';
+                                } catch (attrError) {
+                                    console.warn('Error processing attribute:', attrError, a);
+                                }
+                            });
+                        }
+                        
+                        s += '    }\n';
+                    } catch (entityError) {
+                        console.warn('Error processing entity:', entityError, e);
+                    }
                 });
-                s += '    }\\n';
-            });
+            }
 
-            // Relationships
-            model.relationships.forEach(r => {
-                // Determine cardinality (basic assumption for now: 1 to Many)
-                // If unique constraint exists on local columns, it might be 1 to 1
-                // For now, we use ||--o{ as default
-                const from = r.to_entity.split('.')[1]; // ref table (parent)
-                const to = r.from_entity.split('.')[1]; // local table (child)
-                
-                // Avoid self-references or missing entities crashing mermaid
-                if (from && to) {
-                    const label = r.name.replace(/"/g, "'"); // Escape quotes in label
-                    s += `    ${safeName(from)} ||--o{ ${safeName(to)} : "${label}"\n`;
-                }
-            });
+            // Relationships with proper error handling
+            if (model.relationships && Array.isArray(model.relationships)) {
+                model.relationships.forEach(r => {
+                    try {
+                        if (!r.from_entity || !r.to_entity) return;
+                        
+                        // Extract table names from schema.table format
+                        const fromParts = r.from_entity.split('.');
+                        const toParts = r.to_entity.split('.');
+                        
+                        const fromTable = fromParts.length > 1 ? fromParts[1] : fromParts[0];
+                        const toTable = toParts.length > 1 ? toParts[1] : toParts[0];
+                        
+                        const fromSafe = safeName(fromTable);
+                        const toSafe = safeName(toTable);
+                        
+                        if (!fromSafe || !toSafe) return; // Skip invalid relationships
+                        
+                        // Clean relationship name for label
+                        const label = (r.name || '').replace(/"/g, "'").replace(/[^\w\s\-_]/g, '').trim();
+                        const cleanLabel = label || 'FK';
+                        
+                        // Mermaid ERD relationship syntax: Parent ||--|| Child : "label"
+                        // Use ||--o{ for one-to-many (most common)
+                        s += `    ${fromSafe} ||--o{ ${toSafe} : "${cleanLabel}"\n`;
+                    } catch (relError) {
+                        console.warn('Error processing relationship:', relError, r);
+                    }
+                });
+            }
+
+            // Ensure we have valid Mermaid syntax
+            if (s === 'erDiagram\n') {
+                s += '    EmptyDatabase {\n        varchar message "No entities found"\n    }\n';
+            }
 
             return s;
         }
